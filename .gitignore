@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.venv
+venv/
+
+# Azure Functions
+local.settings.json
+bin/
+obj/
+
+# Model files (NON committare i .pkl)
+model/*.pkl
+
+# OS
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
