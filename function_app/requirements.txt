@@ -1,0 +1,3 @@
+azure-functions
+scikit-learn
+azure-storage-blob
