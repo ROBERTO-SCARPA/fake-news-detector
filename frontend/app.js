@@ -2,7 +2,11 @@
  * Classifica il testo della news tramite Azure Function
  */
 async function classifyNews() {
+    // ✅ Dichiarazioni all'inizio
+    const resultDiv = document.getElementById('result');
+    const btn = document.getElementById('analyzeBtn');
     const text = document.getElementById('newsText').value.trim();
+    
     // Controllo lunghezza minima (numero di parole)
     const wordCount = text.split(/\s+/).length;
     const MIN_WORDS = 30;
@@ -17,9 +21,6 @@ async function classifyNews() {
         resultDiv.style.display = 'block';
         return;
     }
-
-    const resultDiv = document.getElementById('result');
-    const btn = document.getElementById('analyzeBtn');
     
     // Validazione input
     if (!text) {
@@ -75,7 +76,6 @@ async function classifyNews() {
                 Le prestazioni potrebbero essere inferiori su notizie internazionali.
             </p>
         `;
-
         
         // Renderizza risultato
         resultDiv.innerHTML = `
