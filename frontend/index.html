@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fake News Detector</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Fake News Detector</h1>
+        <p class="subtitle">Analizza il testo di una news per verificare se è fake o reale</p>
+        
+        <label for="newsText">Inserisci il testo della news:</label>
+        <textarea id="newsText" placeholder="Copia e incolla qui il testo della news che vuoi analizzare..."></textarea>
+        <button onclick="classifyNews()" id="analyzeBtn">Analizza News</button>
+        
+        <div id="result"></div>
+    </div>
+
+    <script src="app.js"></script>
+    <script src="config.js"></script>
+</body>
+</html>
