@@ -15,22 +15,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Debug secret presence
-        run: |
-          if [ -z "${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}" ]; then
-            echo "❌ Secret is EMPTY"
-            exit 1
-          else
-            echo "✅ Secret is present"
-          fi
-  
-
-      - name: Upload to Azure Blob Storage ($web)
+      - name: Upload frontend to Azure Blob $web
         uses: azure/CLI@v1
         with:
           inlineScript: |
-            az storage blob upload-batch \
-              --connection-string:  ${{ secrets.AZURE_STORAGE_CONNECTION_STRING }} \
-              --source frontend \
-              --destination \$web \
-              --overwrite
+            az storage blob upload-batch --connection-string "${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}" --source frontend --destination '$web' --overwrite
