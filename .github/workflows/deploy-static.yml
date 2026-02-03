@@ -15,6 +15,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Debug secret presence
+        run: |
+          if [ -z "${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}" ]; then
+            echo "❌ Secret is EMPTY"
+            exit 1
+          else
+            echo "✅ Secret is present"
+          fi
+  
+
       - name: Upload to Azure Blob Storage ($web)
         uses: azure/CLI@v1
         with:
