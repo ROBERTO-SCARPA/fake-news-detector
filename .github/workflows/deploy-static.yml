@@ -20,7 +20,7 @@ jobs:
         with:
           inlineScript: |
             az storage blob upload-batch \
-              --connection-string "$AZURE_STORAGE_CONNECTION_STRING" \
+              --connection-string:  ${{ secrets.AZURE_STORAGE_CONNECTION_STRING }} \
               --source frontend \
               --destination '$web' \
               --overwrite
