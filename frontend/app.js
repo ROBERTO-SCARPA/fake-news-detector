@@ -1,6 +1,9 @@
 /**
  * Classifica il testo della news tramite Azure Function
  */
+
+const FUNCTION_URL = "https://func-fakenews-api-fxamgthregb2cbgd.swedencentral-01.azurewebsites.net/api/classify_news";
+
 async function classifyNews() {
     // ✅ Dichiarazioni all'inizio
     const resultDiv = document.getElementById('result');
@@ -36,7 +39,7 @@ async function classifyNews() {
     
     try {
         // Chiama Azure Function
-        const response = await fetch(CONFIG.FUNCTION_URL, {
+        const response = await fetch(FUNCTION_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text: text })

@@ -21,6 +21,3 @@ Thumbs.db
 
 # VS Code
 .vscode
-
-# secrets
-frontend/config.js
