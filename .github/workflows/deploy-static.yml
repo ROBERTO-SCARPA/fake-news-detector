@@ -1,0 +1,26 @@
+name: Deploy Static Website to Azure Blob
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "frontend/**"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Upload to Azure Blob Storage ($web)
+        uses: azure/CLI@v1
+        with:
+          inlineScript: |
+            az storage blob upload-batch \
+              --connection-string "$AZURE_STORAGE_CONNECTION_STRING" \
+              --source frontend \
+              --destination '$web' \
+              --overwrite
