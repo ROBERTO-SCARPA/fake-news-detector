@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - "frontend/**"
+  workflow_dispatch:  
 
 jobs:
   deploy:
@@ -16,7 +17,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Upload frontend to Azure Blob $web
-        uses: azure/CLI@v1
+        uses: azure/CLI@v2
         with:
           inlineScript: |
-            az storage blob upload-batch --connection-string "${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}" --source frontend --destination '$web' --overwrite
+            az storage blob upload-batch --connection-string "${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}" --source ./frontend --destination '$web' --overwrite true
