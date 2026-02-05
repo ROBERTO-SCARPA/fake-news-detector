@@ -1,26 +1,53 @@
 <!DOCTYPE html>
+<!-- Documento HTML5 per applicazione web di rilevamento fake news -->
 
 <html lang="it">
 <head>
+    <!-- Metadati e configurazione -->
     <meta charset="UTF-8">
+    <!-- Charset UTF-8 per supportare caratteri italiani e internazionali -->
+    
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Viewport per responsive design: adatta a dispositivi mobile e desktop -->
+    
     <title>Fake News Detector</title>
+    <!-- Titolo visualizzato nel tab del browser -->
+    
     <link rel="stylesheet" href="style.css">
+    <!-- Importa il foglio di stile CSS per layout e design -->
 </head>
+
 <body>
+    <!-- Container principale dell'applicazione -->
     <div class="container">
+        <!-- Titolo principale con emoji -->
         <h1>🔍 Fake News Detector</h1>
+        
+        <!-- Sottotitolo descrittivo -->
         <p class="subtitle">Analizza il testo di una news per verificare se è fake o reale</p>
         
+        <!-- Sezione input: etichetta e textarea -->
         <label for="newsText">Inserisci il testo della news:</label>
+        <!-- Textarea per input del testo della news -->
+        <!-- id="newsText" usato da app.js per recuperare il valore -->
+        <!-- placeholder mostra un suggerimento all'utente -->
         <textarea id="newsText" placeholder="Copia e incolla qui il testo della news che vuoi analizzare..."></textarea>
+        
+        <!-- Bottone di invio: onclick chiama la funzione classifyNews() da app.js -->
+        <!-- id="analyzeBtn" usato da app.js per disabilitare/abilitare durante richiesta -->
         <button onclick="classifyNews()" id="analyzeBtn">Analizza News</button>
         
+        <!-- Div per visualizzare il risultato della classificazione -->
+        <!-- Viene riempito dinamicamente da app.js con HTML generato -->
         <div id="result"></div>
     </div>
 
-        <script src="app.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+    <!-- Script interni ed esterni -->
+    <!-- app.js contiene la logica principale (funzione classifyNews) -->
+    <script src="app.js"></script>
     
+    <!-- DOMPurify dalla CDN: libreria per sanitizzare HTML e prevenire XSS -->
+    <!-- Versione 3.0.6 utilizzata in app.js per pulire gli output ricevuti dall'API -->
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
 </body>
 </html>

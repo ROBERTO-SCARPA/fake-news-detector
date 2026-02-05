@@ -1,11 +1,23 @@
 /**
- * Classifica il testo della news tramite Azure APIM
+ * Frontend per classificazione fake news tramite Azure APIM.
+ * Invia richieste POST all'API e visualizza i risultati con validazioni di sicurezza e UX.
  */
 
+// Configurazione centrale: URL dell'endpoint APIM
 const CONFIG = {
     APIM_URL: "https://apim-fakenews-2026.azure-api.net/api/classify_news",
 };
 
+/**
+ * Funzione principale: classifica il testo inserito tramite chiamata APIM.
+ * 
+ * Workflow:
+ * 1. Recupera il testo dall'input e valida (non vuoto, lunghezza minima)
+ * 2. Disabilita il bottone e mostra loading
+ * 3. Invia POST a APIM con il testo
+ * 4. Valida la risposta e renderizza il risultato con avvisi condizionali
+ * 5. Gestisce errori HTTP e network
+ */
 async function classifyNews() {
     const resultDiv = document.getElementById('result');
     const btn = document.getElementById('analyzeBtn');
@@ -19,7 +31,8 @@ async function classifyNews() {
         return;
     }
     
-    // Controllo lunghezza minima (numero di parole non vuote)
+    // Valida lunghezza minima del testo (numero di parole non vuote)
+    // Limite di 30 parole per assicurare testo significativo per la classificazione
     const wordCount = text.split(/\s+/).filter(w => w.length > 0).length;
     const MIN_WORDS = 30;
 
@@ -34,13 +47,13 @@ async function classifyNews() {
         return;
     }
     
-    // Disabilita bottone e mostra loading
+    // Disabilita bottone e mostra indicatore di caricamento (UX feedback)
     btn.disabled = true;
     resultDiv.innerHTML = '<p class="loading">⏳ Analizzando il testo...</p>';
     resultDiv.style.display = 'block';
     
     try {
-        // Chiama APIM
+        // Effettua richiesta POST a APIM con il testo nel body JSON
         const response = await fetch(CONFIG.APIM_URL, {
             method: 'POST',
             headers: { 
@@ -49,31 +62,34 @@ async function classifyNews() {
             body: JSON.stringify({ text: text })
         });
         
-        // Gestione errori HTTP
+        // Gestione errori HTTP specifici
         if (!response.ok) {
+            // Gestisci rate limiting (429) separatamente per miglior UX
             if (response.status === 429) {
                 throw new Error('Limite di richieste superato. Riprova più tardi.');
             }
             throw new Error(`Errore server: ${response.status}`);
         }
         
-        // Parse JSON
+        // Parse della risposta JSON
         const data = await response.json();
         
-        // Validazione dati ricevuti 
+        // Validazione della risposta: assicurati che contenga campi obbligatori e tipi corretti
         if (!data || typeof data.is_fake !== 'boolean' || typeof data.confidence !== 'number') {
             throw new Error('Risposta API non valida');
         }
         
-        // Estrai dati (sanitizza label)
+        // Estrai e processa i dati ricevuti
         const isFake = data.is_fake;
         const label = isFake ? '❌ FAKE NEWS' : '✅ NEWS REALE';
         const className = isFake ? 'fake' : 'real';
         const labelClass = isFake ? 'result-fake' : 'result-real';
-        const confidence = Math.max(0, Math.min(100, data.confidence * 100)).toFixed(1);  // Clamp 0-100
+        // Clamp confidenza a 0-100 (converti da frazione a percentuale)
+        const confidence = Math.max(0, Math.min(100, data.confidence * 100)).toFixed(1);
+        // Sanitizza la label ricevuta per evitare XSS
         const safeLabel = DOMPurify.sanitize(data.label.toUpperCase());
 
-        // Warning confidenza bassa
+        // Genera avviso se la confidenza del modello è bassa (non affidabile)
         let confidenceWarning = '';
         const CONFIDENCE_THRESHOLD = 70;
 
@@ -86,6 +102,7 @@ async function classifyNews() {
             `;
         }
 
+        // Disclaimer geografico: il modello è stato addestrato prevalentemente su notizie US
         const geoDisclaimer = `
             <p class="disclaimer">
                 ℹ️ Nota: il modello è stato addestrato prevalentemente su notizie politiche statunitensi.
@@ -93,7 +110,8 @@ async function classifyNews() {
             </p>
         `;
         
-        // Renderizza risultato (tutto sanitizzato)
+        // Renderizza il risultato completo (HTML sanitizzato via DOMPurify)
+        // Includi: label, confidenza visuale (barra), avviso bassa confidenza, disclaimer
         resultDiv.innerHTML = DOMPurify.sanitize(`
             <div class="result-label ${labelClass}">${label}</div>
             <div class="result-details">
@@ -110,7 +128,7 @@ async function classifyNews() {
         resultDiv.style.display = 'block';
         
     } catch (error) {
-        // Errore - usa textContent per evitare XSS nell'error message
+        // Gestione errori: usa textContent (non innerHTML) per evitare XSS nel messaggio d'errore
         const errorMsg = document.createElement('p');
         errorMsg.className = 'error';
         errorMsg.textContent = `❌ Errore: ${error.message}`;
@@ -120,13 +138,14 @@ async function classifyNews() {
         resultDiv.style.display = 'block';
         
     } finally {
-        // Riabilita bottone sempre
+        // Riabilita bottone sempre (indipendentemente da successo/fallimento)
         btn.disabled = false;
     }
 }
 
 /**
- * Event listener: Permetti Ctrl+Enter per inviare
+ * Event listener: permette di inviare la richiesta con Ctrl+Enter (o Cmd+Enter su Mac)
+ * Migliora UX: gli utenti possono inviare senza cliccare il bottone
  */
 document.getElementById('newsText').addEventListener('keypress', function(e) {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
