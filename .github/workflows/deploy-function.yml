@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - "backend/**"
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -18,12 +19,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12.7"
-
-      - name: Install dependencies
-        run: |
-          cd backend
-          pip install -r requirements.txt --target=".python_packages/lib/site-packages"
+          python-version: "3.11"  # ← Cambiato da 3.12.7 a 3.11
 
       - name: Deploy to Azure Function App
         uses: Azure/functions-action@v1
@@ -31,3 +27,5 @@ jobs:
           app-name: func-fakenews-api
           publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
           package: backend
+          scm-do-build-during-deployment: true  # ← AGGIUNTO: Remote build
+          enable-oryx-build: true                # ← AGGIUNTO: Usa Oryx builder

@@ -235,7 +235,7 @@ def classify_news(req: func.HttpRequest) -> func.HttpResponse:
             "confidence": round(confidence, 4),      # Arrotonda a 4 decimali
             "is_fake": prediction == 'fake'          # Bool per facilità client
         }
-
+        
         logging.info(f"✓ Classificazione completata con successo")
 
         # === INVIO RISPOSTA ===
