@@ -1,3 +1,5 @@
 azure-functions
-scikit-learn
 azure-storage-blob
+scikit-learn
+numpy
+cryptography==43.0.3
