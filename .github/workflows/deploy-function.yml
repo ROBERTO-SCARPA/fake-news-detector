@@ -8,6 +8,9 @@ on:
       - "backend/**"
   workflow_dispatch:
 
+env:
+  AZURE_FUNCTIONAPP_NAME: func-fakenews-api  # ← Definisci una volta
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -19,31 +22,42 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"  # ← Cambiato da 3.12.7 a 3.11
+          python-version: "3.11"
 
       - name: Deploy to Azure Function App
         uses: Azure/functions-action@v1
         with:
-          app-name: func-fakenews-api
+          app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}  # ← Usa variabile
           publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
           package: backend
-          scm-do-build-during-deployment: true  # ← AGGIUNTO: Remote build
-          enable-oryx-build: true                # ← AGGIUNTO: Usa Oryx builder
+          scm-do-build-during-deployment: true
+          enable-oryx-build: true
 
       - name: Wait for deployment to complete
-        run: sleep 120  # Attendi 2 minuti per assicurarti che il deployment sia completo
+        run: sleep 120
 
       - name: Warm up cache (automatic)
         run: |
           echo "🔥 Warming up cache..."
-          response=$(curl -s -w "\n%{http_code}" https://fakenewsdetector-func.azurewebsites.net/api/warmup)
+          
+          FUNCTION_URL="https://${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net/api/warmup"
+          echo "Calling: $FUNCTION_URL"
+          
+          response=$(curl -s -w "\n%{http_code}" "$FUNCTION_URL")
           http_code=$(echo "$response" | tail -n1)
           body=$(echo "$response" | head -n-1)
           
+          echo "Response HTTP code: $http_code"
+          
           if [ "$http_code" = "200" ]; then
             echo "✅ Warmup successful!"
-            echo "$body" | jq '.'
+            echo "$body" | jq '.' || echo "$body"
+          elif [ "$http_code" = "000" ]; then
+            echo "❌ Could not connect to Function App (DNS resolution failed)"
+            echo "Check if Function App name is correct: ${{ env.AZURE_FUNCTIONAPP_NAME }}"
+            exit 0  # Non fallire il deploy per problema warmup
           else
             echo "⚠️ Warmup returned HTTP $http_code"
             echo "$body"
+            exit 0
           fi
