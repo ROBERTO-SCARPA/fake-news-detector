@@ -12,7 +12,7 @@ local.settings.json
 bin/
 obj/
 
-# Model files (NON committare i .pkl)
+# Model files 
 model/*.pkl
 
 # OS
@@ -21,3 +21,4 @@ Thumbs.db
 
 # VS Code
 .vscode
+/test
