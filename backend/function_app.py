@@ -532,3 +532,145 @@ def classify_news(req: func.HttpRequest) -> func.HttpResponse:
             status_code=500,
             mimetype="application/json"
         )
+
+@app.route(route="warmup", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+def warmup(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Pre-carica modelli ML in Redis cache per evitare cold start.
+    
+    Chiamare questo endpoint dopo ogni deploy o quando l'app è stata idle.
+    Non richiede autenticazione (ANONYMOUS) per permettere chiamate da monitoring.
+    
+    Esempio: GET https://fakenewsdetector-func.azurewebsites.net/api/warmup
+    
+    Risposta:
+    --------
+    200 OK:
+    {
+        "status": "success",
+        "message": "Cache warmed up successfully",
+        "models_loaded": ["classifier", "vectorizer"]
+    }
+    """
+    try:
+        logging.info("🔥 Warmup endpoint chiamato - Pre-caricamento modelli...")
+        
+        # Carica modelli (triggerà download da Blob + salvataggio in Redis)
+        load_model_from_blob()
+        
+        logging.info("✅ Warmup completato con successo")
+        
+        return func.HttpResponse(
+            json.dumps({
+                "status": "success",
+                "message": "Cache warmed up successfully",
+                "models_loaded": ["classifier", "vectorizer"],
+                "cache_ttl_hours": 24
+            }, indent=2),
+            status_code=200,
+            mimetype="application/json"
+        )
+        
+    except Exception as e:
+        logging.error(f"❌ Warmup fallito: {e}")
+        return func.HttpResponse(
+            json.dumps({
+                "status": "error", 
+                "message": str(e)
+            }),
+            status_code=500,
+            mimetype="application/json"
+        )
+    
+    
+@app.route(route="admin/flush_cache", methods=["POST"], auth_level=func.AuthLevel.ADMIN)
+def flush_cache(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Svuota la cache Redis e ricarica immediatamente i modelli (flush + warmup automatico).
+    
+    Flusso:
+    1. Cancella modelli e predizioni da Redis
+    2. Carica automaticamente i nuovi modelli da Blob Storage
+    3. Li salva in Redis (warmup automatico)
+    
+    Questo garantisce zero downtime: i modelli sono sempre disponibili.
+    
+    Query parameter opzionale:
+    - skip_warmup=true : Salta il ricaricamento automatico
+    
+    Esempio:
+    POST /api/admin/flush_cache
+    POST /api/admin/flush_cache?skip_warmup=true
+    """
+    try:
+        # Opzione per skippare warmup (se serve flush veloce senza reload)
+        skip_warmup = req.params.get('skip_warmup', 'false').lower() == 'true'
+        
+        cache = get_redis_client()
+        
+        if not cache:
+            logging.warning("⚠️ Redis non disponibile - nessuna cache da svuotare")
+            return func.HttpResponse(
+                json.dumps({
+                    "error": "Redis not available",
+                    "message": "Cache distribuita non configurata"
+                }),
+                status_code=503,
+                mimetype="application/json"
+            )
+        
+        logging.info("🗑️ Flush cache richiesto - Cancellazione in corso...")
+        
+        # === STEP 1: FLUSH CACHE ===
+        models_deleted = cache.delete(
+            "model:classifier:v1",
+            "model:vectorizer:v1"
+        )
+        
+        prediction_keys = cache.keys("prediction:*")
+        predictions_deleted = 0
+        if prediction_keys:
+            predictions_deleted = cache.delete(*prediction_keys)
+        
+        # Cancella anche le variabili globali in-memory
+        global classifier, vectorizer
+        classifier = None
+        vectorizer = None
+        
+        logging.info(
+            f"✅ Cache svuotata: {models_deleted} modelli, "
+            f"{predictions_deleted} predizioni"
+        )
+        
+        # === STEP 2: WARMUP AUTOMATICO (se non skippato) ===
+        warmup_status = "skipped"
+        if not skip_warmup:
+            try:
+                logging.info("🔥 Warmup automatico in corso...")
+                load_model_from_blob()  # Ricarica modelli da Blob → Redis → memoria
+                warmup_status = "success"
+                logging.info("✅ Warmup automatico completato")
+            except Exception as warmup_error:
+                logging.error(f"⚠️ Warmup automatico fallito: {warmup_error}")
+                warmup_status = f"failed: {str(warmup_error)}"
+        
+        return func.HttpResponse(
+            json.dumps({
+                "status": "success",
+                "models_flushed": models_deleted,
+                "predictions_flushed": predictions_deleted,
+                "warmup_status": warmup_status,
+                "message": "Cache cleared and models reloaded successfully." if warmup_status == "success" else "Cache cleared.",
+                "next_request_latency": "~50-100ms (models cached)" if warmup_status == "success" else "~1-2s (will download from Blob)"
+            }, indent=2),
+            status_code=200,
+            mimetype="application/json"
+        )
+        
+    except Exception as e:
+        logging.error(f"❌ Errore flush cache: {e}")
+        return func.HttpResponse(
+            json.dumps({"error": str(e)}),
+            status_code=500,
+            mimetype="application/json"
+        )

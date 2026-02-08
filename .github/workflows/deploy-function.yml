@@ -8,6 +8,10 @@ on:
       - "backend/**"
   workflow_dispatch:
 
+env:
+  AZURE_FUNCTIONAPP_NAME: func-fakenews-api  
+  APIM_GATEWAY_URL: https://apim-fakenews-2026.azure-api.net
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -19,13 +23,39 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"  # ← Cambiato da 3.12.7 a 3.11
+          python-version: "3.11"
 
       - name: Deploy to Azure Function App
         uses: Azure/functions-action@v1
         with:
-          app-name: func-fakenews-api
+          app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
           publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
           package: backend
-          scm-do-build-during-deployment: true  # ← AGGIUNTO: Remote build
-          enable-oryx-build: true                # ← AGGIUNTO: Usa Oryx builder
+          scm-do-build-during-deployment: true
+          enable-oryx-build: true
+
+      - name: Wait for deployment to complete
+        run: sleep 120
+
+      - name: Warm up cache via APIM
+        continue-on-error: true
+        timeout-minutes: 2
+        run: |
+          echo "🔥 Warming up cache via APIM..."
+          
+          WARMUP_URL="${{ env.APIM_GATEWAY_URL }}/api/warmup"
+          echo "→ URL: $WARMUP_URL"
+          
+          response=$(curl -s -w "\n%{http_code}" --max-time 30 "$WARMUP_URL")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | head -n-1)
+          
+          echo "→ HTTP $http_code"
+          
+          if [ "$http_code" = "200" ]; then
+            echo "✅ Warmup successful!"
+            echo "$body" | jq '.' 2>/dev/null || echo "$body"
+          else
+            echo "⚠️ Warmup returned HTTP $http_code (non-critical)"
+            echo "$body"
+          fi
