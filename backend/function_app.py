@@ -552,6 +552,7 @@ def warmup(req: func.HttpRequest) -> func.HttpResponse:
         "models_loaded": ["classifier", "vectorizer"]
     }
     """
+    
     try:
         logging.info("🔥 Warmup endpoint chiamato - Pre-caricamento modelli...")
         
