@@ -516,6 +516,7 @@ def classify_news(req: func.HttpRequest) -> func.HttpResponse:
         
         # === CACHING RISULTATO ===
         # Salva predizione in Redis per 5 minuti
+        
         cache_prediction(text_hash, result, ttl=300)
         
         return func.HttpResponse(
