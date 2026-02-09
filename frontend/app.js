@@ -1,48 +1,36 @@
 /**
  * Frontend per classificazione fake news tramite Azure APIM.
  * Invia richieste POST all'API e visualizza i risultati con validazioni di sicurezza e UX.
+ * La validazione del numero di parole è gestita dal backend.
  */
+
 
 // Configurazione centrale: URL dell'endpoint APIM
 const CONFIG = {
     APIM_URL: "https://apim-fakenews-2026.azure-api.net/api/classify_news",
 };
 
+
 /**
  * Funzione principale: classifica il testo inserito tramite chiamata APIM.
  * 
  * Workflow:
- * 1. Recupera il testo dall'input e valida (non vuoto, lunghezza minima)
+ * 1. Recupera il testo dall'input e valida solo che non sia vuoto
  * 2. Disabilita il bottone e mostra loading
  * 3. Invia POST a APIM con il testo
- * 4. Valida la risposta e renderizza il risultato con avvisi condizionali
- * 5. Gestisce errori HTTP e network
+ * 4. Gestisce errori di validazione dal backend (400) mostrando il messaggio
+ * 5. Valida la risposta e renderizza il risultato con avvisi condizionali
+ * 6. Gestisce errori HTTP e network
  */
 async function classifyNews() {
     const resultDiv = document.getElementById('result');
     const btn = document.getElementById('analyzeBtn');
     const text = document.getElementById('newsText').value.trim();
     
-    // Controllo input vuoto
+    // Controllo input vuoto (unica validazione lato client)
     if (!text) {
         resultDiv.textContent = '⚠️ Inserisci un testo prima di analizzare';
         resultDiv.className = 'error';
-        resultDiv.style.display = 'block';
-        return;
-    }
-    
-    // Valida lunghezza minima del testo (numero di parole non vuote)
-    // Limite di 30 parole per assicurare testo significativo per la classificazione
-    const wordCount = text.split(/\s+/).filter(w => w.length > 0).length;
-    const MIN_WORDS = 30;
-
-    if (wordCount < MIN_WORDS) {
-        resultDiv.innerHTML = DOMPurify.sanitize(`
-            <p class="error">
-                ⚠️ Testo troppo breve (${wordCount} parole).<br>
-                Inserisci almeno ${MIN_WORDS} parole per una classificazione affidabile.
-            </p>
-        `);
         resultDiv.style.display = 'block';
         return;
     }
@@ -64,11 +52,36 @@ async function classifyNews() {
         
         // Gestione errori HTTP specifici
         if (!response.ok) {
-            // Gestisci rate limiting (429) separatamente per miglior UX
-            if (response.status === 429) {
-                throw new Error('Limite di richieste superato. Riprova più tardi.');
+            // Parse del messaggio di errore dal backend
+            let errorMessage = `Errore server: ${response.status}`;
+            
+            try {
+                const errorData = await response.json();
+                
+                // Gestisci errori di validazione (400) dal backend
+                if (response.status === 400 && errorData.error) {
+                    // Mostra il messaggio di errore del backend (es. numero parole insufficiente)
+                    errorMessage = errorData.error;
+                    
+                    // Se presente, mostra anche il conteggio parole
+                    if (errorData.word_count !== undefined) {
+                        errorMessage += ` (${errorData.word_count} parole rilevate)`;
+                    }
+                }
+                // Gestisci rate limiting (429) separatamente per miglior UX
+                else if (response.status === 429) {
+                    errorMessage = 'Limite di richieste superato. Riprova più tardi.';
+                }
+                // Altri errori con messaggio dal backend
+                else if (errorData.error) {
+                    errorMessage = errorData.error;
+                }
+            } catch (parseError) {
+                // Se il parsing JSON fallisce, usa il messaggio di default
+                console.error('Errore parsing risposta errore:', parseError);
             }
-            throw new Error(`Errore server: ${response.status}`);
+            
+            throw new Error(errorMessage);
         }
         
         // Parse della risposta JSON
@@ -89,9 +102,11 @@ async function classifyNews() {
         // Sanitizza la label ricevuta per evitare XSS
         const safeLabel = DOMPurify.sanitize(data.label.toUpperCase());
 
+
         // Genera avviso se la confidenza del modello è bassa (non affidabile)
         let confidenceWarning = '';
         const CONFIDENCE_THRESHOLD = 70;
+
 
         if (confidence < CONFIDENCE_THRESHOLD) {
             confidenceWarning = `
@@ -101,6 +116,7 @@ async function classifyNews() {
                 </p>
             `;
         }
+
 
         // Disclaimer geografico: il modello è stato addestrato prevalentemente su notizie US
         const geoDisclaimer = `
@@ -131,7 +147,7 @@ async function classifyNews() {
         // Gestione errori: usa textContent (non innerHTML) per evitare XSS nel messaggio d'errore
         const errorMsg = document.createElement('p');
         errorMsg.className = 'error';
-        errorMsg.textContent = `❌ Errore: ${error.message}`;
+        errorMsg.textContent = `❌ ${error.message}`;
         resultDiv.innerHTML = '';
         resultDiv.appendChild(errorMsg);
         resultDiv.className = 'error';
@@ -142,6 +158,7 @@ async function classifyNews() {
         btn.disabled = false;
     }
 }
+
 
 /**
  * Event listener: permette di inviare la richiesta con Ctrl+Enter (o Cmd+Enter su Mac)

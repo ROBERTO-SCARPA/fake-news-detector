@@ -4,3 +4,5 @@ scikit-learn
 numpy
 cryptography==43.0.3
 redis>=5.0.0
+requests
+azure-storage-queue

@@ -18,6 +18,8 @@ import os                           # Accesso variabili d'ambiente
 from azure.storage.blob import BlobServiceClient  # Cliente per Blob Storage
 import redis                        # Cliente Redis per caching distribuito
 
+MIN_WORDS = int(os.getenv('MIN_WORDS', '10'))
+MAX_WORDS = int(os.getenv('MAX_WORDS', '5000'))
 
 # ============================================================================
 # CONFIGURAZIONE GLOBALE
@@ -438,15 +440,24 @@ def classify_news(req: func.HttpRequest) -> func.HttpResponse:
                 mimetype="application/json"
             )
         
-        # Validazione lunghezza minima (evita testi troppo corti per essere classificati)
-        if len(text) < 20:
+        word_count = len(text.split())
+
+        if word_count < MIN_WORDS:
             return func.HttpResponse(
-                json.dumps({"error": "Text must be at least 20 characters"}),
+                json.dumps({"error": f"Il testo deve contenere almeno {MIN_WORDS} parole"}),
                 status_code=400,
                 mimetype="application/json"
             )
         
-        logging.info(f"→ Richiesta classificazione ricevuta ({len(text)} caratteri)")
+        if word_count > MAX_WORDS:
+            return func.HttpResponse(
+                json.dumps({"error": f"Il testo deve contenere al massimo {MAX_WORDS} parole"}),
+                status_code=400,
+                mimetype="application/json"
+            )
+
+        
+        logging.info(f"→ Richiesta classificazione ricevuta ({len(text)} caratteri, {word_count} parole)")
         
         # === CACHING PREDIZIONE (LIVELLO 1) ===
         # Genera hash SHA-256 del testo per identificare predizioni duplicate
@@ -499,7 +510,8 @@ def classify_news(req: func.HttpRequest) -> func.HttpResponse:
             "confidence": round(confidence, 4),
             "processing_ms": elapsed_ms,
             "cache_hit": False,
-            "text_preview": text[:100] + ("..." if len(text) > 100 else "")
+            "text_preview": text[:100] + ("..." if len(text) > 100 else ""),
+            "word_count": word_count                             
         }
         
         # === CACHING RISULTATO ===
