@@ -17,6 +17,8 @@ import time                         # Misurazione latenza
 import os                           # Accesso variabili d'ambiente
 from azure.storage.blob import BlobServiceClient  # Cliente per Blob Storage
 import redis                        # Cliente Redis per caching distribuito
+from job_manager import JobManager, JobInfo, JobStatus
+from datetime import datetime, timezone
 
 MIN_WORDS = int(os.getenv('MIN_WORDS', '10'))
 MAX_WORDS = int(os.getenv('MAX_WORDS', '5000'))
@@ -516,7 +518,7 @@ def classify_news(req: func.HttpRequest) -> func.HttpResponse:
         
         # === CACHING RISULTATO ===
         # Salva predizione in Redis per 5 minuti
-        
+
         cache_prediction(text_hash, result, ttl=300)
         
         return func.HttpResponse(
@@ -597,7 +599,7 @@ def warmup(req: func.HttpRequest) -> func.HttpResponse:
         )
     
     
-@app.route(route="admin/flush_cache", methods=["POST"], auth_level=func.AuthLevel.ADMIN)
+@app.route(route="sysadmin/flush_cache", methods=["POST"], auth_level=func.AuthLevel.ADMIN)
 def flush_cache(req: func.HttpRequest) -> func.HttpResponse:
     """
     Svuota la cache Redis e ricarica immediatamente i modelli (flush + warmup automatico).
@@ -613,8 +615,8 @@ def flush_cache(req: func.HttpRequest) -> func.HttpResponse:
     - skip_warmup=true : Salta il ricaricamento automatico
     
     Esempio:
-    POST /api/admin/flush_cache
-    POST /api/admin/flush_cache?skip_warmup=true
+    POST /api/sysadmin/flush_cache
+    POST /api/sysadmin/flush_cache?skip_warmup=true
     """
     try:
         # Opzione per skippare warmup (se serve flush veloce senza reload)
@@ -688,3 +690,376 @@ def flush_cache(req: func.HttpRequest) -> func.HttpResponse:
             status_code=500,
             mimetype="application/json"
         )
+
+# ============================================================================
+# ASYNC BATCH CLASSIFICATION
+# ============================================================================
+@app.route(route="classify_batch", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
+def classify_batch(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Submit batch classification job (async processing)
+    
+    POST body:
+    {
+        "texts": ["News 1", "News 2", ...],
+        "user_id": "optional_user_id",
+        "priority": 0  # 0=normal, 1=high
+    }
+    
+    Response 202 Accepted:
+    {
+        "job_id": "uuid",
+        "status": "queued",
+        "texts_count": 10,
+        "created_at": "2026-02-09T20:30:00Z",
+        "estimated_completion_seconds": 5.0
+    }
+    """
+    start_time = time.time()
+    
+    try:
+        req_body = req.get_json()
+        if not req_body:
+            return func.HttpResponse(
+                json.dumps({"error": "Request body must be valid JSON"}),
+                status_code=400,
+                mimetype="application/json"
+            )
+        
+        # Estrai e valida input
+        texts = req_body.get('texts', [])
+        if not isinstance(texts, list) or not texts:
+            return func.HttpResponse(
+                json.dumps({"error": "'texts' must be a non-empty array"}),
+                status_code=400,
+                mimetype="application/json"
+            )
+        
+        # Limiti di sicurezza
+        if len(texts) > 1000:
+            return func.HttpResponse(
+                json.dumps({"error": "Massimo 1000 testi per batch"}),
+                status_code=400,
+                mimetype="application/json"
+            )
+        
+        # Validazione ogni testo
+        valid_texts = []
+        for idx, text in enumerate(texts):
+            if not isinstance(text, str):
+                return func.HttpResponse(
+                    json.dumps({"error": f"Text at index {idx} is not a string"}),
+                    status_code=400,
+                    mimetype="application/json"
+                )
+            
+            clean_text = text.strip()
+            if len(clean_text) < 20:
+                return func.HttpResponse(
+                    json.dumps({"error": f"Text at index {idx} too short (min 20 chars)"}),
+                    status_code=400,
+                    mimetype="application/json"
+                )
+            valid_texts.append(clean_text)
+        
+        # Metadata opzionali
+        user_id = req_body.get('user_id', 'anonymous')
+        try:
+            priority = int(req_body.get('priority', 0))
+            if priority not in [0, 1]:
+                priority = 0
+        except (ValueError, TypeError):
+            priority = 0
+        
+        # Inizializza JobManager (lazy)
+        storage_conn = os.getenv('AzureWebJobsStorage')
+        if not storage_conn:
+            return func.HttpResponse(
+                json.dumps({"error": "Azure Storage not configured"}),
+                status_code=500,
+                mimetype="application/json"
+            )
+        
+        job_manager = JobManager(storage_conn)
+        job_info: JobInfo = job_manager.create_job(
+            texts=valid_texts,
+            user_id=user_id,
+            priority=priority
+        )
+        
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        logging.info(
+            f"📨 Batch job {job_info.job_id} created "
+            f"({job_info.texts_count} texts, user={user_id}, prio={priority}, {elapsed_ms}ms)"
+        )
+        
+        # 202 Accepted per async processing
+        return func.HttpResponse(
+            json.dumps(job_info.to_dict(), indent=2),
+            status_code=202,
+            mimetype="application/json",
+            headers={
+                "Location": f"/api/jobs/{job_info.job_id}",
+                "X-Processing-Time": str(elapsed_ms)
+            }
+        )
+    
+    except Exception as e:
+        logging.error(f"Batch classification error: {e}", exc_info=True)
+        return func.HttpResponse(
+            json.dumps({"error": "Internal server error"}),
+            status_code=500,
+            mimetype="application/json"
+        )
+
+
+# ============================================================================
+# JOB STATUS (STUB - da implementare con Cosmos/Redis)
+# ============================================================================
+@app.route(route="jobs/{job_id}", methods=["GET"], auth_level=func.AuthLevel.FUNCTION)
+def get_job_status(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Get job status and results (TODO: implement with Cosmos DB/Redis)
+    
+    Response:
+    {
+        "job_id": "uuid",
+        "status": "completed|processing|...",
+        "progress": 100,
+        "results": [...],
+        "created_at": "2026-02-07T20:30:00Z"
+    }
+    """
+    try:
+        job_id = req.route_params.get('job_id')
+        if not job_id:
+            return func.HttpResponse(
+                json.dumps({"error": "Missing job_id"}),
+                status_code=400,
+                mimetype="application/json"
+            )
+        
+        # Legge stato del job da Redis 
+        cache = get_redis_client()
+        if cache:
+            cache_key = f"job:status:{job_id}"
+            cached_status = cache.get(cache_key)
+
+            if cached_status:
+                logging.info(f"⚡ Job status trovato per job: {job_id}")
+                return func.HttpResponse(
+                    cached_status.decode('utf-8'),
+                    status_code=200,
+                    mimetype="application/json"
+                )
+            return func.HttpResponse(
+                json.dumps({"error": "Job not found", "job_id": job_id, "message": "Job may have expired from cache or never existed"}),
+                status_code=404,
+                mimetype="application/json"
+            )
+    
+    except Exception as e:
+        logging.error(f"Job status error {job_id}: {e}")
+        return func.HttpResponse(
+            json.dumps({"error": "Internal server error"}),
+            status_code=500,
+            mimetype="application/json"
+        )
+
+
+# ============================================================================
+# ADMIN: QUEUE MONITORING
+# ============================================================================
+@app.route(route="sysadmin/queue/stats", methods=["GET"], auth_level=func.AuthLevel.ADMIN)
+def queue_stats(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Get queue statistics (sysadmin only)
+    
+    Response:
+    {
+        "queue_depth": 15,
+        "dlq_count": 2,
+        "peek_messages": [...],
+        "timestamp": "2026-02-09T20:30:00Z"
+    }
+    """
+    try:
+        storage_conn = os.getenv('STORAGE_CONNECTION_STRING')
+        if not storage_conn:
+            return func.HttpResponse(
+                json.dumps({"error": "STORAGE_CONNECTION_STRING not configured"}),
+                status_code=500,
+                mimetype="application/json"
+            )
+        
+        job_manager = JobManager(storage_conn)
+        stats = {
+            "queue_depth": job_manager.get_queue_depth(),
+            "dlq_count": job_manager.get_dlq_count(),
+            "peek_messages": job_manager.peek_messages(max_messages=5),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+        logging.info(f"Queue stats: depth={stats['queue_depth']}, dlq={stats['dlq_count']}")
+        
+        return func.HttpResponse(
+            json.dumps(stats, indent=2),
+            status_code=200,
+            mimetype="application/json"
+        )
+    
+    except Exception as e:
+        logging.error(f"Queue stats error: {e}", exc_info=True)
+        return func.HttpResponse(
+            json.dumps({"error": "Internal server error"}),
+            status_code=500,
+            mimetype="application/json"
+        )
+
+
+# ============================================================================
+# WORKER: QUEUE MESSAGE PROCESSOR
+# ============================================================================
+@app.queue_trigger(
+    arg_name="msg",
+    queue_name="classifynews-queue",
+    connection="AzureWebJobsStorage"  # ← Questa env var deve esistere
+)
+def process_classification_job(msg: func.QueueMessage) -> None:
+    """
+    Background worker: Process queued classification jobs
+    Triggered by: Message in classifynews -queue
+    Scaling: 0-200 instances based on queue depth
+    Visibility timeout: 5 minutes (auto-extends if processing)
+    Max dequeue count: 5 (then → dead-letter queue)
+    """
+    start_time = time.time()
+    
+    try:
+        # Decode messaggio (già base64 da JobManager)
+        message_body = msg.get_body().decode('utf-8')
+        job_data = json.loads(message_body)
+        
+        # Estrai dati obbligatori
+        job_id = job_data.get('job_id')
+        texts = job_data.get('texts', [])
+        retry_count = job_data.get('retry_count', 0)
+        user_id = job_data.get('user_id', 'anonymous')
+        
+        if not job_id or not texts:
+            raise ValueError("Missing job_id or texts in message")
+        
+        logging.info(
+            f"🔨 Worker processing job {job_id} "
+            f"({len(texts)} texts, user={user_id}, retry={retry_count})"
+        )
+        
+        # 🔹 AGGIORNA STATUS INIZIALE (PROCESSING)
+        cache = get_redis_client()
+        if cache:
+            cache.setex(
+                f"job:status:{job_id}",
+                3600,  # 1 ora TTL
+                json.dumps({
+                    "job_id": job_id,
+                    "status": JobStatus.PROCESSING,  
+                    "progress": 0,
+                    "processed": 0,
+                    "total": len(texts),
+                    "started_at": datetime.now(timezone.utc).isoformat()
+                })
+            )
+        
+        # 🔹 CARICA MODELLI ML 
+        load_model_from_blob()  # Carica classifier e vectorizer globali
+        
+        # 🔹 PROCESSA OGNI TESTO
+        results = []
+        for idx, text in enumerate(texts):
+            try:
+                # Classificazione
+                text_vec = vectorizer.transform([text])
+                prediction = classifier.predict(text_vec)[0]
+                confidence_scores = classifier.predict_proba(text_vec)[0]
+                confidence = float(max(confidence_scores))
+                
+                results.append({
+                    "index": idx,
+                    "text_preview": text[:100] + "..." if len(text) > 100 else text,
+                    "is_fake": prediction.upper() == "FAKE",
+                    "label": prediction.upper(),
+                    "confidence": round(confidence, 4),
+                    "hash": hashlib.sha256(text.encode('utf-8')).hexdigest()[:16]
+                })
+                
+                # Aggiorna progresso ogni 10% circa
+                if (idx + 1) % max(1, len(texts) // 10) == 0 and cache:
+                    progress = int(((idx + 1) / len(texts)) * 100)
+                    cache.setex(
+                        f"job:status:{job_id}",
+                        3600,
+                        json.dumps({
+                            "job_id": job_id,
+                            "status": "processing",
+                            "progress": progress,
+                            "processed": idx + 1,
+                            "total": len(texts)
+                        })
+                    )
+                
+            except Exception as item_error:
+                logging.error(f"✗ Item {idx} failed: {item_error}")
+                results.append({
+                    "index": idx,
+                    "error": str(item_error)[:200]  # Truncate long errors
+                })
+        
+        # 🔹 STATISTICHE FINALI
+        fake_count = sum(1 for r in results if r.get('is_fake') is True)
+        real_count = sum(1 for r in results if r.get('is_fake') is False)
+        error_count = sum(1 for r in results if 'error' in r)
+        
+        # 🔹 SALVA RISULTATO FINALE
+        job_result = {
+            "job_id": job_id,
+            "status": "completed",
+            "progress": 100,
+            "summary": {
+                "total": len(texts),
+                "fake": fake_count,
+                "real": real_count,
+                "errors": error_count
+            },
+            "results": results,
+            "created_at": job_data.get('created_at'),
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "processing_time_seconds": round(time.time() - start_time, 2)
+        }
+        
+        # Cache risultato finale (24h)
+        if cache:
+            cache.setex(
+                f"job:status:{job_id}",
+                86400,  # 24 ore
+                json.dumps(job_result)
+            )
+        
+        # 🔹 LOG FINALE
+        elapsed = time.time() - start_time
+        logging.info(
+            f"✅ Job {job_id} COMPLETED: "
+            f"{fake_count}F/{real_count}R/{error_count}E "
+            f"({elapsed:.1f}s, {len(results)} items)"
+        )
+        
+    except json.JSONDecodeError as e:
+        logging.error(f"❌ Invalid JSON message: {e}")
+        raise  # Azure Functions retry → DLQ dopo 5 tentativi
+    
+    except ValueError as e:
+        logging.error(f"❌ Invalid job data: {e}")
+        raise
+    
+    except Exception as e:
+        logging.error(f"❌ Worker CRASH job {job_id}: {e}", exc_info=True)
+        raise  # Trigger retry mechanism (max 5 → DLQ)
