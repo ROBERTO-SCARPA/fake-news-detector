@@ -1,26 +1,26 @@
 /**
- * Frontend per classificazione fake news tramite Azure APIM.
- * Invia richieste POST all'API e visualizza i risultati con validazioni di sicurezza e UX.
+ * Frontend per classificazione fake news tramite proxy Function App.
+ * Il proxy nasconde la subscription key APIM per sicurezza.
+ * Invia richieste POST all'endpoint pubblico e visualizza i risultati con validazioni di sicurezza e UX.
  * La validazione del numero di parole è gestita dal backend.
  */
 
-
-// Configurazione centrale: URL dell'endpoint APIM
+// Configurazione centrale: URL dell'endpoint proxy pubblico (NESSUNA key necessaria)
 const CONFIG = {
-    APIM_URL: "https://apim-fakenews-2026.azure-api.net/fakenewsdetector/classify_news",
+    API_URL: "https://func-fakenews-api.azurewebsites.net/api/classify_news_public",
 };
 
-
 /**
- * Funzione principale: classifica il testo inserito tramite chiamata APIM.
+ * Funzione principale: classifica il testo inserito tramite chiamata al proxy pubblico.
  * 
  * Workflow:
  * 1. Recupera il testo dall'input e valida solo che non sia vuoto
  * 2. Disabilita il bottone e mostra loading
- * 3. Invia POST a APIM con il testo
- * 4. Gestisce errori di validazione dal backend (400) mostrando il messaggio
- * 5. Valida la risposta e renderizza il risultato con avvisi condizionali
- * 6. Gestisce errori HTTP e network
+ * 3. Invia POST al proxy pubblico con il testo (NO auth header)
+ * 4. Il proxy aggiunge automaticamente la subscription key APIM (nascosta)
+ * 5. Gestisce errori di validazione dal backend (400) mostrando il messaggio
+ * 6. Valida la risposta e renderizza il risultato con avvisi condizionali
+ * 7. Gestisce errori HTTP e network
  */
 async function classifyNews() {
     const resultDiv = document.getElementById('result');
@@ -41,8 +41,9 @@ async function classifyNews() {
     resultDiv.style.display = 'block';
     
     try {
-        // Effettua richiesta POST a APIM con il testo nel body JSON
-        const response = await fetch(CONFIG.APIM_URL, {
+        // Effettua richiesta POST al proxy pubblico con il testo nel body JSON
+        // NOTA: Nessun header di autenticazione necessario (proxy gestisce la key)
+        const response = await fetch(CONFIG.API_URL, {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json'
@@ -71,6 +72,10 @@ async function classifyNews() {
                 // Gestisci rate limiting (429) separatamente per miglior UX
                 else if (response.status === 429) {
                     errorMessage = 'Limite di richieste superato. Riprova più tardi.';
+                }
+                // Servizio non disponibile (503) - proxy non raggiunge APIM
+                else if (response.status === 503) {
+                    errorMessage = 'Servizio di classificazione temporaneamente non disponibile. Riprova tra qualche minuto.';
                 }
                 // Altri errori con messaggio dal backend
                 else if (errorData.error) {
@@ -102,11 +107,9 @@ async function classifyNews() {
         // Sanitizza la label ricevuta per evitare XSS
         const safeLabel = DOMPurify.sanitize(data.label.toUpperCase());
 
-
         // Genera avviso se la confidenza del modello è bassa (non affidabile)
         let confidenceWarning = '';
         const CONFIDENCE_THRESHOLD = 70;
-
 
         if (confidence < CONFIDENCE_THRESHOLD) {
             confidenceWarning = `
@@ -116,7 +119,6 @@ async function classifyNews() {
                 </p>
             `;
         }
-
 
         // Disclaimer geografico: il modello è stato addestrato prevalentemente su notizie US
         const geoDisclaimer = `
@@ -158,7 +160,6 @@ async function classifyNews() {
         btn.disabled = false;
     }
 }
-
 
 /**
  * Event listener: permette di inviare la richiesta con Ctrl+Enter (o Cmd+Enter su Mac)

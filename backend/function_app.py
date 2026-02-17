@@ -11,6 +11,7 @@ Le predizioni vengono cachate per testo identico (SHA-256 hash).
 import azure.functions as func      # Runtime e decoratori Azure Functions
 import json                         # Serializzazione/deserializzazione JSON
 import pickle                       # Deserializzazione modelli ML salvati
+import requests                     # Per chiamate HTTP (APIM, Blob Storage)
 import logging                      # Log strutturato per debugging e monitoring
 import hashlib                      # Generazione hash per caching predizioni
 import time                         # Misurazione latenza
@@ -1061,3 +1062,75 @@ def process_classification_job(msg: func.QueueMessage) -> None:
     except Exception as e:
         logging.error(f"❌ Worker CRASH job {job_id}: {e}", exc_info=True)
         raise  # Trigger retry mechanism (max 5 → DLQ)
+
+
+@app.route(route="classify_news_public", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+def classify_news_public(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Proxy pubblico che nasconde la subscription key APIM.
+    Frontend chiama questo endpoint senza autenticazione.
+    Questo endpoint aggiunge la key e chiama APIM.
+    """
+    
+    try:
+        # Leggi body dalla richiesta frontend
+        req_body = req.get_json()
+        text = req_body.get('text', '').strip()
+        
+        if not text:
+            return func.HttpResponse(
+                json.dumps({"error": "Missing 'text' field"}),
+                status_code=400,
+                mimetype="application/json"
+            )
+        
+        # Subscription key nascosta (da environment variables)
+        APIM_KEY = os.getenv('APIM_SUBSCRIPTION_KEY')
+        APIM_URL = "https://apim-fakenews-2026.azure-api.net/fakenewsdetector/classify_news"
+        
+        if not APIM_KEY:
+            logging.error("APIM_SUBSCRIPTION_KEY not configured")
+            return func.HttpResponse(
+                json.dumps({"error": "Service misconfiguration"}),
+                status_code=500,
+                mimetype="application/json"
+            )
+        
+        # Chiama APIM con la key nascosta
+        response = requests.post(
+            APIM_URL,
+            headers={
+                "Content-Type": "application/json",
+                "Ocp-Apim-Subscription-Key": APIM_KEY
+            },
+            json={"text": text},
+            timeout=30
+        )
+        
+        # Ritorna la risposta APIM al frontend
+        return func.HttpResponse(
+            response.text,
+            status_code=response.status_code,
+            mimetype="application/json"
+        )
+    
+    except ValueError:
+        return func.HttpResponse(
+            json.dumps({"error": "Invalid JSON"}),
+            status_code=400,
+            mimetype="application/json"
+        )
+    except requests.exceptions.RequestException as e:
+        logging.error(f"APIM request failed: {e}")
+        return func.HttpResponse(
+            json.dumps({"error": "Classification service unavailable"}),
+            status_code=503,
+            mimetype="application/json"
+        )
+    except Exception as e:
+        logging.error(f"Proxy error: {e}", exc_info=True)
+        return func.HttpResponse(
+            json.dumps({"error": "Internal server error"}),
+            status_code=500,
+            mimetype="application/json"
+        )
