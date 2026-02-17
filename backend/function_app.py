@@ -819,8 +819,6 @@ def classify_batch(req: func.HttpRequest) -> func.HttpResponse:
 @app.route(route="jobs/{job_id}", methods=["GET"], auth_level=func.AuthLevel.FUNCTION)
 def get_job_status(req: func.HttpRequest) -> func.HttpResponse:
     """
-    Get job status and results (TODO: implement with Cosmos DB/Redis)
-    
     Response:
     {
         "job_id": "uuid",

@@ -7,7 +7,7 @@
 
 // Configurazione centrale: URL dell'endpoint APIM
 const CONFIG = {
-    APIM_URL: "https://apim-fakenews-2026.azure-api.net/api/classify_news",
+    APIM_URL: "https://apim-fakenews-2026.azure-api.net/fakenewsdetector/classify_news",
 };
 
 
