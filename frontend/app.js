@@ -7,7 +7,7 @@
 
 // Configurazione centrale: URL dell'endpoint proxy pubblico (NESSUNA key necessaria)
 const CONFIG = {
-    API_URL: "https://func-fakenews-api.azurewebsites.net/api/classify_news_public",
+    API_URL: "https://func-fakenews-api-fxamgthregb2cbgd.swedencentral-01.azurewebsites.net/api/classify_news_public",
 };
 
 /**
