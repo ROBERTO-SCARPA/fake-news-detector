@@ -27,7 +27,7 @@ const msalConfig = {
 
 // Scope richiesto: permesso di chiamare l'API 
 const loginRequest = {
-    scopes: ["api://fakenews-api/Classify.News"]  
+    scopes: ["api://c5cdb33c-0318-4a0d-a66b-59a330aaabc5/Classify.News"]  
 };
 
 // Inizializza MSAL Public Client Application
