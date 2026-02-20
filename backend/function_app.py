@@ -353,7 +353,7 @@ def cache_prediction(text_hash: str, result: dict, ttl: int = 300):
 # HTTP ENDPOINT
 # ============================================================================
 
-@app.route(route="classify_news", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+@app.route(route="classify_news", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
 def classify_news(req: func.HttpRequest) -> func.HttpResponse:
     """
     HTTP trigger (POST): classifica una news come fake o reale con caching Redis.

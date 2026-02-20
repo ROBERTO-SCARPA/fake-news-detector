@@ -1,3 +1,7 @@
+/* ============================================================================
+   RESET E BASE
+   ============================================================================ */
+
 * {
     margin: 0;
     padding: 0;
@@ -14,14 +18,22 @@ body {
     padding: 20px;
 }
 
+/* ============================================================================
+   CONTAINER
+   ============================================================================ */
+
 .container {
     background: white;
     border-radius: 12px;
-    box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
     max-width: 700px;
     width: 100%;
     padding: 40px;
 }
+
+/* ============================================================================
+   TIPOGRAFIA
+   ============================================================================ */
 
 h1 {
     color: #333;
@@ -33,7 +45,7 @@ h1 {
 .subtitle {
     text-align: center;
     color: #666;
-    margin-bottom: 30px;
+    margin-bottom: 20px;
     font-size: 14px;
 }
 
@@ -43,6 +55,30 @@ label {
     color: #333;
     font-weight: 600;
 }
+
+/* ============================================================================
+   INFO UTENTE LOGGATO
+   ============================================================================ */
+
+#fn-user-info {
+    display: none;                  
+    font-size: 0.875rem;
+    padding: 6px 14px;
+    border-radius: 20px;
+    background-color: #e8f5e9;
+    color: #2e7d32;
+    font-weight: 500;
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+#fn-user-info.fn-user-info--visible {
+    display: block;
+}
+
+/* ============================================================================
+   TEXTAREA
+   ============================================================================ */
 
 textarea {
     width: 100%;
@@ -61,6 +97,10 @@ textarea:focus {
     border-color: #667eea;
 }
 
+/* ============================================================================
+   BOTTONE
+   ============================================================================ */
+
 button {
     width: 100%;
     padding: 14px;
@@ -72,28 +112,54 @@ button {
     font-weight: 600;
     cursor: pointer;
     margin-top: 20px;
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
 }
 
-button:hover {
+button:hover:not(:disabled) {
     transform: translateY(-2px);
     box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
 }
 
-button:active {
+button:active:not(:disabled) {
     transform: translateY(0);
 }
 
-button:disabled {
+button:disabled,
+button.fn-btn--loading {
     opacity: 0.7;
     cursor: not-allowed;
+    transform: none;
 }
 
-#result {
+/* ============================================================================
+   SPINNER DI CARICAMENTO
+   ============================================================================ */
+
+.fn-loading-spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid #c4b5ea;
+    border-top-color: #667eea;
+    border-radius: 50%;
+    animation: fn-spin 0.75s linear infinite;
+    vertical-align: middle;
+    margin-right: 6px;
+}
+
+@keyframes fn-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* ============================================================================
+   RISULTATO — contenitore principale
+   ============================================================================ */
+
+#fn-result {
     margin-top: 30px;
     padding: 20px;
     border-radius: 8px;
-    display: none;
+    display: none;                  
     animation: slideIn 0.3s ease-out;
 }
 
@@ -108,90 +174,112 @@ button:disabled {
     }
 }
 
-#result.fake {
+.fn-result--fake {
     background: #ffebee;
     border-left: 4px solid #f44336;
 }
 
-#result.real {
+.fn-result--real {
     background: #e8f5e9;
     border-left: 4px solid #4caf50;
 }
 
-.result-label {
+.fn-result--loading {
+    background: #f3f4f6;
+    border-left: 4px solid #667eea;
+    color: #667eea;
+    font-weight: 600;
+    text-align: center;
+}
+
+.fn-result--error {
+    background: #ffebee;
+    border-left: 4px solid #f44336;
+    color: #c62828;
+}
+
+.fn-result--warning {
+    background: #fff3cd;
+    border-left: 4px solid #f59e0b;
+    color: #856404;
+}
+
+/* ============================================================================
+   RISULTATO — etichetta FAKE / REAL
+   ============================================================================ */
+
+.fn-result__label {
     font-size: 20px;
     font-weight: 700;
     margin-bottom: 10px;
 }
 
-.result-fake {
+.fn-result__label--fake {
     color: #c62828;
 }
 
-.result-real {
+.fn-result__label--real {
     color: #2e7d32;
 }
 
-.result-details {
+/* ============================================================================
+   RISULTATO — dettagli
+   ============================================================================ */
+
+.fn-result__details {
     font-size: 14px;
     color: #666;
 }
 
-.confidence-bar {
+.fn-result__confidence-text {
+    margin: 0 0 8px;
+    color: #444;
+}
+
+.fn-result__confidence-bar {
     width: 100%;
     height: 8px;
     background: #e0e0e0;
     border-radius: 4px;
-    margin-top: 8px;
     overflow: hidden;
+    margin-bottom: 10px;
 }
 
-.confidence-fill {
+.fn-result__confidence-fill {
     height: 100%;
+    width: var(--fn-confidence, 0%);    
     border-radius: 4px;
     transition: width 0.5s ease-out;
 }
 
-.confidence-fill.fake {
+.fn-result__confidence-fill--fake {
     background: #f44336;
 }
 
-.confidence-fill.real {
+.fn-result__confidence-fill--real {
     background: #4caf50;
 }
 
-.loading {
-    text-align: center;
-    color: #667eea;
-    font-weight: 600;
-}
-
-.error {
-    background: #ffebee;
-    border-left: 4px solid #f44336;
-    color: #c62828;
-}
-
-.warning {
+.fn-result__warning {
     margin-top: 10px;
     color: #856404;
     background: #fff3cd;
-    padding: 8px;
+    padding: 8px 10px;
     border-radius: 4px;
+    border-left: 3px solid #f59e0b;
     font-size: 0.9em;
 }
 
-.disclaimer {
+.fn-result__classification {
+    margin-top: 10px;
+    color: #444;
+}
+
+.fn-result__disclaimer {
     margin-top: 15px;
     font-size: 0.85em;
     color: #555;
     font-style: italic;
-}
-.confidence-warning {
-    margin-top: 10px;
-    color: #856404;
-    background: #fff3cd;
-    padding: 8px;
-    border-radius: 4px;
-    font-size: 0.9em;
+    border-top: 1px solid #e0e0e0;
+    padding-top: 10px;
 }
