@@ -66,11 +66,6 @@ def get_redis_client():
     4. Testa la connessione con PING
     5. In caso di errore: logga warning e ritorna None (graceful degradation)
     
-    Variabili d'ambiente richieste:
-    -------------------------------
-    REDIS_CONNECTION_STRING: formato "default:PASSWORD@HOST:PORT"
-                             Esempio: "default:abc123@myredis.redis.cache.windows.net:6380"
-    
     Ritorna:
     --------
     redis.Redis | None: client Redis o None se non disponibile
@@ -136,17 +131,14 @@ def load_model_from_blob():
     Carica modello e vectorizer con strategia di caching a 3 livelli:
     
     LIVELLO 1 (più veloce): Variabili globali in-memory
-                            - Latenza: ~0ms
                             - Scope: singola istanza Function App
                             - Durata: fino al restart dell'istanza
     
     LIVELLO 2 (veloce): Redis cache distribuita
-                        - Latenza: ~5-10ms
                         - Scope: condivisa tra tutte le istanze
                         - Durata: 24h (TTL configurabile)
     
     LIVELLO 3 (lento): Azure Blob Storage
-                       - Latenza: ~500-1000ms
                        - Scope: persistente
                        - Durata: permanente
     
@@ -156,10 +148,10 @@ def load_model_from_blob():
        → Se presenti: return (cache hit, ~0ms)
     
     2. Controlla Redis cache
-       → Se presenti: deserializza con pickle, aggiorna globali, return (~10ms)
+       → Se presenti: deserializza con pickle, aggiorna globali, return 
     
     3. Scarica da Blob Storage
-       → Download blob → deserializza → salva in Redis (TTL 24h) → aggiorna globali (~1s)
+       → Download blob → deserializza → salva in Redis (TTL 24h) → aggiorna globali 
     
     Variabili d'ambiente richieste:
     -------------------------------
@@ -197,7 +189,7 @@ def load_model_from_blob():
                 logging.info("⚡ Cache HIT (Redis) - Caricamento modelli da Redis")
                 classifier = pickle.loads(cached_classifier)
                 vectorizer = pickle.loads(cached_vectorizer)
-                logging.info("✅ Modelli caricati da Redis (~10ms)")
+                logging.info("✅ Modelli caricati da Redis")
                 return
             else:
                 logging.info("⚠️ Cache MISS (Redis) - Fallback a Blob Storage")
@@ -226,14 +218,14 @@ def load_model_from_blob():
         classifier_blob = container_client.get_blob_client('classifier.pkl')
         classifier_data = classifier_blob.download_blob().readall()
         classifier = pickle.loads(classifier_data)
-        logging.info("✓ Classifier caricato da Blob")
+        logging.info("Classifier caricato da Blob")
         
         # Download vectorizer
         logging.info("📥 Download vectorizer.pkl da Blob Storage...")
         vectorizer_blob = container_client.get_blob_client('vectorizer.pkl')
         vectorizer_data = vectorizer_blob.download_blob().readall()
         vectorizer = pickle.loads(vectorizer_data)
-        logging.info("✓ Vectorizer caricato da Blob")
+        logging.info("Vectorizer caricato da Blob")
         
         # Salva in Redis per le prossime richieste (TTL: 24h)
         if cache:
@@ -932,7 +924,7 @@ def process_classification_job(msg: func.QueueMessage) -> None:
     start_time = time.time()
     
     try:
-        # Decode messaggio (già base64 da JobManager)
+        # Decode messaggio e estrai dati
         message_body = msg.get_body().decode('utf-8')
         job_data = json.loads(message_body)
         
@@ -1059,3 +1051,32 @@ def process_classification_job(msg: func.QueueMessage) -> None:
     except Exception as e:
         logging.error(f"❌ Worker CRASH job {job_id}: {e}", exc_info=True)
         raise  # Trigger retry mechanism (max 5 → DLQ)
+
+
+@app.route(route="stayon", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+def stayon(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Lightweight keepalive endpoint for Azure App Service warm-up.
+    
+    Questo endpoint serve a mantenere attiva l'istanza della Function App
+    evitando cold starts quando non ci sono richieste per lunghi periodi.
+    
+    Caratteristiche:
+    ----------------
+    - NO autenticazione (ANONYMOUS) → accessibile da monitoring esterno
+    - NO caricamento modelli → risposta rapida (~1-5ms)
+    - NO accesso Redis/Blob → nessuna latenza I/O
+    - NO elaborazione ML → solo health check
+    
+    Risposta HTTP:
+    ---------------
+    200 OK - Status sempre positivo (l'app è alive)
+    {
+        "status": "ok"
+    }
+    """
+    return func.HttpResponse(
+        '{"status": "ok"}',  # Payload minimo (2 byte gzipped)
+        status_code=200,      # Success - App is responsive
+        mimetype="application/json"  # Header Content-Type
+    )

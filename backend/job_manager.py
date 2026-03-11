@@ -283,7 +283,7 @@ class JobManager:
             logging.error("Errore move_to_dlq: %s", e, exc_info=True)
 
     # ---------------------------------------------------------------------- #
-    # PEEK (MONITORING NON DISTRUTTIVO)
+    # PEEK (MONITORING NON REMOVING)
     # ---------------------------------------------------------------------- #
 
     def peek_messages(self, max_messages: int = 5) -> List[Dict[str, Any]]:
