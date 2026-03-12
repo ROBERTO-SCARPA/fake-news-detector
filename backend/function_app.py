@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 
 MIN_WORDS = int(os.getenv('MIN_WORDS', '30'))
 MAX_WORDS = int(os.getenv('MAX_WORDS', '1000'))
+JOB_STATUS_TTL_SECONDS = 600  # 10 minuti
 
 # ============================================================================
 # CONFIGURAZIONE GLOBALE
@@ -627,25 +628,12 @@ def flush_cache(req: func.HttpRequest) -> func.HttpResponse:
         logging.info("Flush cache requested - Deletion in progress...")
         
         # === STEP 1: FLUSH CACHE ===
-        models_deleted = cache.delete(
-            "model:classifier:v1",
-            "model:vectorizer:v1"
-        )
-        
-        prediction_keys = cache.keys("prediction:*")
-        predictions_deleted = 0
-        if prediction_keys:
-            predictions_deleted = cache.delete(*prediction_keys)
+        cache.flushdb() 
         
         # Cancella anche le variabili globali in-memory
         global classifier, vectorizer
         classifier = None
         vectorizer = None
-        
-        logging.info(
-            f"Cache cleared: {models_deleted} models, "
-            f"{predictions_deleted} predictions"
-        )
         
         # === STEP 2: WARMUP AUTOMATICO (se non skippato) ===
         warmup_status = "skipped"
@@ -662,11 +650,8 @@ def flush_cache(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse(
             json.dumps({
                 "status": "success",
-                "models_flushed": models_deleted,
-                "predictions_flushed": predictions_deleted,
                 "warmup_status": warmup_status,
                 "message": "Cache cleared and models reloaded successfully." if warmup_status == "success" else "Cache cleared.",
-                "next_request_latency": "~50-100ms (models cached)" if warmup_status == "success" else "~1-2s (will download from Blob)"
             }, indent=2),
             status_code=200,
             mimetype="application/json"
@@ -803,7 +788,7 @@ def classify_batch(req: func.HttpRequest) -> func.HttpResponse:
 
 
 # ============================================================================
-# JOB STATUS (STUB - da implementare con Cosmos/Redis)
+# JOB STATUS 
 # ============================================================================
 @app.route(route="jobs/{job_id}", methods=["GET"], auth_level=func.AuthLevel.FUNCTION)
 def get_job_status(req: func.HttpRequest) -> func.HttpResponse:
@@ -984,7 +969,7 @@ def process_classification_job(msg: func.QueueMessage) -> None:
                     progress = int(((idx + 1) / len(texts)) * 100)
                     cache.setex(
                         f"job:status:{job_id}",
-                        3600,
+                        JOB_STATUS_TTL_SECONDS,
                         json.dumps({
                             "job_id": job_id,
                             "status": "processing",
@@ -1027,7 +1012,7 @@ def process_classification_job(msg: func.QueueMessage) -> None:
         if cache:
             cache.setex(
                 f"job:status:{job_id}",
-                86400,  # 24 ore
+                JOB_STATUS_TTL_SECONDS,
                 json.dumps(job_result)
             )
         

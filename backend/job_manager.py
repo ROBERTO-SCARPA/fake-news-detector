@@ -120,7 +120,7 @@ class JobManager:
         )
 
         logging.info(
-            "JobManager inizializzato (queue=%s, dlq=%s, ttl=%ss)",
+            "JobManager started (queue=%s, dlq=%s, ttl=%ss)",
             queue_name,
             dlq_name,
             message_ttl_seconds,
@@ -181,7 +181,7 @@ class JobManager:
             est_seconds = texts_count * ESTIMATED_SECONDS_PER_TEXT
 
             logging.info(
-                "✅ Job %s accodato (%d testi, user=%s, priority=%d)",
+                "Job %s encoded (%d testi, user=%s, priority=%d)",
                 job_id,
                 texts_count,
                 user_id,
@@ -197,7 +197,7 @@ class JobManager:
             )
 
         except Exception as e:
-            logging.error("❌ Impossibile accodare job: %s", e, exc_info=True)
+            logging.error("Impossible encoding jobs: %s", e, exc_info=True)
             raise
 
     # ---------------------------------------------------------------------- #
@@ -217,10 +217,10 @@ class JobManager:
             logging.debug("Queue depth (%s): %d", self.queue_name, count)
             return count
         except ResourceNotFoundError:
-            logging.warning("Queue non trovata: %s", self.queue_name)
+            logging.warning("Queue not found: %s", self.queue_name)
             return 0
         except Exception as e:
-            logging.error("Errore get_queue_depth: %s", e, exc_info=True)
+            logging.error("Error getting queue depth: %s", e, exc_info=True)
             return 0
 
     def get_dlq_count(self) -> int:
@@ -236,10 +236,10 @@ class JobManager:
             logging.debug("DLQ depth (%s): %d", self.dlq_name, count)
             return count
         except ResourceNotFoundError:
-            logging.warning("DLQ non trovata: %s", self.dlq_name)
+            logging.warning("DLQ not found: %s", self.dlq_name)
             return 0
         except Exception as e:
-            logging.error("Errore get_dlq_count: %s", e, exc_info=True)
+            logging.error("Error getting DLQ count: %s", e, exc_info=True)
             return 0
 
     def clear_queue(self) -> None:
@@ -248,9 +248,9 @@ class JobManager:
         """
         try:
             self.queue_client.clear_messages()
-            logging.info("🧹 Queue %s svuotata", self.queue_name)
+            logging.info("Queue %s emptied", self.queue_name)
         except Exception as e:
-            logging.error("Errore clear_queue: %s", e, exc_info=True)
+            logging.error("Error clearing queue: %s", e, exc_info=True)
 
     # ---------------------------------------------------------------------- #
     # DEAD-LETTER HANDLING
@@ -277,10 +277,10 @@ class JobManager:
             }
 
             self.dlq_client.send_message(json.dumps(dlq_message, ensure_ascii=False).encode("utf-8"))
-            logging.warning("⚠️ Messaggio move_to_dlq eseguito: %s", error)
+            logging.warning("Message moved to DLQ: %s", error)
 
         except Exception as e:
-            logging.error("Errore move_to_dlq: %s", e, exc_info=True)
+            logging.error("Error moving message to DLQ: %s", e, exc_info=True)
 
     # ---------------------------------------------------------------------- #
     # PEEK (MONITORING NON REMOVING)
@@ -324,5 +324,5 @@ class JobManager:
             return result
 
         except Exception as e:
-            logging.error("Errore peek_messages: %s", e, exc_info=True)
+            logging.error("Error peeking messages: %s", e, exc_info=True)
             return []
