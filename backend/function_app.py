@@ -21,8 +21,8 @@ import redis                        # Cliente Redis per caching distribuito
 from job_manager import JobManager, JobInfo, JobStatus
 from datetime import datetime, timezone
 
-MIN_WORDS = int(os.getenv('MIN_WORDS', '10'))
-MAX_WORDS = int(os.getenv('MAX_WORDS', '5000'))
+MIN_WORDS = int(os.getenv('MIN_WORDS', '30'))
+MAX_WORDS = int(os.getenv('MAX_WORDS', '1000'))
 
 # ============================================================================
 # CONFIGURAZIONE GLOBALE
@@ -90,8 +90,8 @@ def get_redis_client():
         if not connection_string:
             # Redis non configurato: l'app continua con caching in-memory
             logging.warning(
-                "⚠️ REDIS_CONNECTION_STRING non configurata - "
-                "caching distribuito disabilitato (solo in-memory)"
+                "REDIS_CONNECTION_STRING not configured - "
+                "Redis caching disabled, using in-memory cache only"
             )
             return None
         
@@ -109,13 +109,13 @@ def get_redis_client():
         # Test connessione con PING
         # Solleva eccezione se Redis non è raggiungibile
         redis_client.ping()
-        logging.info("✅ Redis connesso: caching distribuito attivo")
+        logging.info("Redis connection established successfully")
         
     except Exception as e:
         # Errore connessione Redis: logga e continua con solo in-memory cache
         logging.error(
-            f"❌ Connessione Redis fallita: {e} - "
-            f"Fallback a caching solo in-memory"
+            f"Redis connection failed: {e} - "
+            f"Fallback to in-memory caching only"
         )
         redis_client = None
     
@@ -168,10 +168,10 @@ def load_model_from_blob():
     # === LIVELLO 1: CACHE IN-MEMORY ===
     # Controlla se il modello è già stato caricato in questa istanza
     if classifier is not None and vectorizer is not None:
-        logging.info("⚡ Cache HIT (in-memory) - Modello già caricato")
+        logging.info("Cache HIT (in-memory) - model already loaded")
         return
     
-    logging.info("→ Inizio caricamento modello (multi-level caching)...")
+    logging.info("Starting loading model (multi-level caching...)")
     
     # === LIVELLO 2: REDIS CACHE ===
     cache = get_redis_client()
@@ -186,17 +186,17 @@ def load_model_from_blob():
             
             # Entrambi presenti in Redis: deserializza e aggiorna globali
             if cached_classifier and cached_vectorizer:
-                logging.info("⚡ Cache HIT (Redis) - Caricamento modelli da Redis")
+                logging.info("Cache HIT (Redis) - loading from Redis cache")
                 classifier = pickle.loads(cached_classifier)
                 vectorizer = pickle.loads(cached_vectorizer)
-                logging.info("✅ Modelli caricati da Redis")
+                logging.info("Models loaded from Redis cache successfully")
                 return
             else:
-                logging.info("⚠️ Cache MISS (Redis) - Fallback a Blob Storage")
+                logging.info("Cache MISS (Redis) - Fallback to Blob Storage")
                 
         except Exception as e:
             # Redis error non fatale: continua con Blob Storage
-            logging.warning(f"Redis read error: {e} - Fallback a Blob Storage")
+            logging.warning(f"Redis read error: {e} - Fallback to Blob Storage")
     
     # === LIVELLO 3: BLOB STORAGE ===
     try:
@@ -205,8 +205,8 @@ def load_model_from_blob():
         
         if not connection_string:
             raise ValueError(
-                "AzureWebJobsStorage non configurata. "
-                "Verifica configurazione storage account nella Function App."
+                "AzureWebJobsStorage not configured. "
+                "Verify storage account configuration in the Function App."
             )
         
         # Connessione a Blob Storage
@@ -214,18 +214,18 @@ def load_model_from_blob():
         container_client = blob_service_client.get_container_client('models')
         
         # Download classifier
-        logging.info("📥 Download classifier.pkl da Blob Storage...")
+        logging.info("📥 Download classifier.pkl from Blob Storage...")
         classifier_blob = container_client.get_blob_client('classifier.pkl')
         classifier_data = classifier_blob.download_blob().readall()
         classifier = pickle.loads(classifier_data)
-        logging.info("Classifier caricato da Blob")
+        logging.info("Classifier loaded from Blob Storage")
         
         # Download vectorizer
-        logging.info("📥 Download vectorizer.pkl da Blob Storage...")
+        logging.info("📥 Download vectorizer.pkl from Blob Storage...")
         vectorizer_blob = container_client.get_blob_client('vectorizer.pkl')
         vectorizer_data = vectorizer_blob.download_blob().readall()
         vectorizer = pickle.loads(vectorizer_data)
-        logging.info("Vectorizer caricato da Blob")
+        logging.info("Vectorizer loaded from Blob Storage")
         
         # Salva in Redis per le prossime richieste (TTL: 24h)
         if cache:
@@ -240,17 +240,17 @@ def load_model_from_blob():
                     86400,  # 24 ore
                     vectorizer_data
                 )
-                logging.info("✅ Modelli cachati in Redis (TTL: 24h)")
+                logging.info("Models cached in Redis (TTL: 24h)")
             except Exception as e:
                 # Redis write error non fatale
                 logging.warning(f"Redis write error: {e}")
         
-        logging.info("✅ Modelli caricati completamente da Blob Storage (~1s)")
+        logging.info("✅ Models loaded completely from Blob Storage (~1s)")
         
     except Exception as e:
         # Errore fatale: impossibile caricare il modello
         logging.error(
-            f"✗ Errore critico caricamento modello: {str(e)}",
+            f"Critical error loading models: {str(e)}",
             extra={'exception': str(e)}
         )
         raise
@@ -296,10 +296,10 @@ def get_cached_prediction(text_hash: str) -> dict | None:
         cached_result = cache.get(cache_key)
         
         if cached_result:
-            logging.info(f"⚡ Cache HIT (predizione) - Hash: {text_hash[:8]}...")
+            logging.info(f"Cache HIT (prediction) - Hash: {text_hash[:8]}...")
             return json.loads(cached_result.decode('utf-8'))
         else:
-            logging.info(f"⚠️ Cache MISS (predizione) - Hash: {text_hash[:8]}...")
+            logging.info(f"Cache MISS (prediction) - Hash: {text_hash[:8]}...")
             return None
             
     except Exception as e:
@@ -335,7 +335,7 @@ def cache_prediction(text_hash: str, result: dict, ttl: int = 300):
             ttl,
             json.dumps(result)
         )
-        logging.info(f"✅ Predizione cachata in Redis (TTL: {ttl}s)")
+        logging.info(f"Prediction cached in Redis (TTL: {ttl}s)")
     except Exception as e:
         # Redis write error non fatale
         logging.warning(f"Redis write error: {e}")
@@ -436,20 +436,20 @@ def classify_news(req: func.HttpRequest) -> func.HttpResponse:
 
         if word_count < MIN_WORDS:
             return func.HttpResponse(
-                json.dumps({"error": f"Il testo deve contenere almeno {MIN_WORDS} parole"}),
+                json.dumps({"error": f"Text must contain at least {MIN_WORDS} words"}),
                 status_code=400,
                 mimetype="application/json"
             )
         
         if word_count > MAX_WORDS:
             return func.HttpResponse(
-                json.dumps({"error": f"Il testo deve contenere al massimo {MAX_WORDS} parole"}),
+                json.dumps({"error": f"Text must contain at most {MAX_WORDS} words"}),
                 status_code=400,
                 mimetype="application/json"
             )
 
         
-        logging.info(f"→ Richiesta classificazione ricevuta ({len(text)} caratteri, {word_count} parole)")
+        logging.info(f"→ Request received for classification ({len(text)} characters, {word_count} words)")
         
         # === CACHING PREDIZIONE (LIVELLO 1) ===
         # Genera hash SHA-256 del testo per identificare predizioni duplicate
@@ -464,7 +464,7 @@ def classify_news(req: func.HttpRequest) -> func.HttpResponse:
             cached_result['cache_hit'] = True
             cached_result['text_preview'] = text[:100] + ("..." if len(text) > 100 else "")
             
-            logging.info(f"⚡ Predizione da cache Redis ({elapsed_ms}ms)")
+            logging.info(f"Prediction from Redis cache ({elapsed_ms}ms)")
             
             return func.HttpResponse(
                 json.dumps(cached_result, indent=2),
@@ -474,12 +474,12 @@ def classify_news(req: func.HttpRequest) -> func.HttpResponse:
         
         # === CARICAMENTO MODELLO ===
         # Carica da cache multi-livello (in-memory → Redis → Blob)
-        logging.info("📦 Caricamento modelli ML...")
+        logging.info("Loading ML models...")
         load_model_from_blob()
         
         # === TRASFORMAZIONE TESTO ===
         # Vettorizzazione TF-IDF: testo → matrice sparse numerica
-        logging.info(f"→ Vectorizing testo: '{text[:50]}...'")
+        logging.info(f"→ Vectorizing text: '{text[:50]}...'")
         text_vec = vectorizer.transform([text])
         
         # === PREDIZIONE ===
@@ -489,7 +489,7 @@ def classify_news(req: func.HttpRequest) -> func.HttpResponse:
         confidence = float(max(confidence_scores))
         
         logging.info(
-            f"✅ Predizione: {prediction} "
+            f"Prediction: {prediction} "
             f"(confidence: {confidence:.4f})"
         )
         
@@ -519,7 +519,7 @@ def classify_news(req: func.HttpRequest) -> func.HttpResponse:
     
     except ValueError as e:
         # Errore di validazione input
-        logging.error(f"✗ Validation error: {e}")
+        logging.error(f"Validation error: {e}")
         return func.HttpResponse(
             json.dumps({"error": str(e)}),
             status_code=400,
@@ -529,7 +529,7 @@ def classify_news(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as e:
         # Errore generico (modello, Redis, Blob, etc)
         logging.error(
-            f"✗ Internal error: {str(e)}",
+            f"Internal error: {str(e)}",
             extra={'exception': str(e)}
         )
         return func.HttpResponse(
@@ -546,7 +546,6 @@ def warmup(req: func.HttpRequest) -> func.HttpResponse:
     Chiamare questo endpoint dopo ogni deploy o quando l'app è stata idle.
     Non richiede autenticazione (ANONYMOUS) per permettere chiamate da monitoring.
     
-    Esempio: GET https://fakenewsdetector-func.azurewebsites.net/api/warmup
     
     Risposta:
     --------
@@ -559,12 +558,12 @@ def warmup(req: func.HttpRequest) -> func.HttpResponse:
     """
     
     try:
-        logging.info("🔥 Warmup endpoint chiamato - Pre-caricamento modelli...")
+        logging.info("Warmup endpoint called - Pre-loading models...")
         
         # Carica modelli (triggerà download da Blob + salvataggio in Redis)
         load_model_from_blob()
         
-        logging.info("✅ Warmup completato con successo")
+        logging.info("Warmup successfully completed")
         
         return func.HttpResponse(
             json.dumps({
@@ -578,7 +577,7 @@ def warmup(req: func.HttpRequest) -> func.HttpResponse:
         )
         
     except Exception as e:
-        logging.error(f"❌ Warmup fallito: {e}")
+        logging.error(f"Warmup failed: {e}")
         return func.HttpResponse(
             json.dumps({
                 "status": "error", 
@@ -615,17 +614,17 @@ def flush_cache(req: func.HttpRequest) -> func.HttpResponse:
         cache = get_redis_client()
         
         if not cache:
-            logging.warning("⚠️ Redis non disponibile - nessuna cache da svuotare")
+            logging.warning("Redis not available - no cache to flush")
             return func.HttpResponse(
                 json.dumps({
                     "error": "Redis not available",
-                    "message": "Cache distribuita non configurata"
+                    "message": "Distributed cache not configured"
                 }),
                 status_code=503,
                 mimetype="application/json"
             )
         
-        logging.info("🗑️ Flush cache richiesto - Cancellazione in corso...")
+        logging.info("Flush cache requested - Deletion in progress...")
         
         # === STEP 1: FLUSH CACHE ===
         models_deleted = cache.delete(
@@ -644,20 +643,20 @@ def flush_cache(req: func.HttpRequest) -> func.HttpResponse:
         vectorizer = None
         
         logging.info(
-            f"✅ Cache svuotata: {models_deleted} modelli, "
-            f"{predictions_deleted} predizioni"
+            f"Cache cleared: {models_deleted} models, "
+            f"{predictions_deleted} predictions"
         )
         
         # === STEP 2: WARMUP AUTOMATICO (se non skippato) ===
         warmup_status = "skipped"
         if not skip_warmup:
             try:
-                logging.info("🔥 Warmup automatico in corso...")
+                logging.info("Automatic warmup in progress...")
                 load_model_from_blob()  # Ricarica modelli da Blob → Redis → memoria
                 warmup_status = "success"
-                logging.info("✅ Warmup automatico completato")
+                logging.info("Automatic warmup completed")
             except Exception as warmup_error:
-                logging.error(f"⚠️ Warmup automatico fallito: {warmup_error}")
+                logging.error(f"Automatic warmup failed: {warmup_error}")
                 warmup_status = f"failed: {str(warmup_error)}"
         
         return func.HttpResponse(
@@ -674,7 +673,7 @@ def flush_cache(req: func.HttpRequest) -> func.HttpResponse:
         )
         
     except Exception as e:
-        logging.error(f"❌ Errore flush cache: {e}")
+        logging.error(f"Error flushing cache: {e}")
         return func.HttpResponse(
             json.dumps({"error": str(e)}),
             status_code=500,
@@ -726,9 +725,9 @@ def classify_batch(req: func.HttpRequest) -> func.HttpResponse:
             )
         
         # Limiti di sicurezza
-        if len(texts) > 1000:
+        if len(texts) > 100:
             return func.HttpResponse(
-                json.dumps({"error": "Massimo 1000 testi per batch"}),
+                json.dumps({"error": "Too many texts in batch (max 100)"}),
                 status_code=400,
                 mimetype="application/json"
             )
@@ -746,7 +745,7 @@ def classify_batch(req: func.HttpRequest) -> func.HttpResponse:
             clean_text = text.strip()
             if len(clean_text) < 20:
                 return func.HttpResponse(
-                    json.dumps({"error": f"Text at index {idx} too short (min 20 chars)"}),
+                    json.dumps({"error": f"Text at index {idx} too short (min 30 words)"}),
                     status_code=400,
                     mimetype="application/json"
                 )
@@ -834,7 +833,7 @@ def get_job_status(req: func.HttpRequest) -> func.HttpResponse:
             cached_status = cache.get(cache_key)
 
             if cached_status:
-                logging.info(f"⚡ Job status trovato per job: {job_id}")
+                logging.info(f"Job status found for job: {job_id}")
                 return func.HttpResponse(
                     cached_status.decode('utf-8'),
                     status_code=200,
@@ -872,10 +871,10 @@ def queue_stats(req: func.HttpRequest) -> func.HttpResponse:
     }
     """
     try:
-        storage_conn = os.getenv('STORAGE_CONNECTION_STRING')
+        storage_conn = os.getenv('AzureWebJobsStorage')
         if not storage_conn:
             return func.HttpResponse(
-                json.dumps({"error": "STORAGE_CONNECTION_STRING not configured"}),
+                json.dumps({"error": "STORAGE CONNECTION STRING not configured"}),
                 status_code=500,
                 mimetype="application/json"
             )
@@ -911,7 +910,7 @@ def queue_stats(req: func.HttpRequest) -> func.HttpResponse:
 @app.queue_trigger(
     arg_name="msg",
     queue_name="classifynews-queue",
-    connection="AzureWebJobsStorage"  # ← Questa env var deve esistere
+    connection="AzureWebJobsStorage" 
 )
 def process_classification_job(msg: func.QueueMessage) -> None:
     """
@@ -938,7 +937,7 @@ def process_classification_job(msg: func.QueueMessage) -> None:
             raise ValueError("Missing job_id or texts in message")
         
         logging.info(
-            f"🔨 Worker processing job {job_id} "
+            f"Worker processing job {job_id} "
             f"({len(texts)} texts, user={user_id}, retry={retry_count})"
         )
         
