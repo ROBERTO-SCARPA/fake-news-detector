@@ -8,14 +8,21 @@ Le predizioni vengono cachate per testo identico (SHA-256 hash).
 # ============================================================================
 # IMPORTS
 # ============================================================================
+import ipaddress
+from urllib.parse import urlparse
+
 import azure.functions as func      # Runtime e decoratori Azure Functions
 import json                         # Serializzazione/deserializzazione JSON
 import pickle                       # Deserializzazione modelli ML salvati
+import httpx
 import requests                     # Per chiamate HTTP (APIM, Blob Storage)
 import logging                      # Log strutturato per debugging e monitoring
 import hashlib                      # Generazione hash per caching predizioni
 import time                         # Misurazione latenza
 import os                           # Accesso variabili d'ambiente
+import logging                      # Logging avanzato con contesto
+import asyncio                       # Per operazioni async 
+from scraper import fetch_html, extract_article_text  
 from azure.storage.blob import BlobServiceClient  # Cliente per Blob Storage
 import redis                        # Cliente Redis per caching distribuito
 from job_manager import JobManager, JobInfo, JobStatus
@@ -1064,3 +1071,138 @@ def stayon(req: func.HttpRequest) -> func.HttpResponse:
         status_code=200,      # Success - App is responsive
         mimetype="application/json"  # Header Content-Type
     )
+
+
+# ============================================================================
+# SCRAPER
+# ============================================================================
+
+def is_safe_url(url: str) -> bool:
+   """
+   
+   """
+   try:
+       parsed = urlparse(url)
+       if parsed.scheme not in ("http", "https") or not parsed.netloc:
+           return False
+       host = parsed.hostname
+       if not host:
+           return False
+       try:
+           ip = ipaddress.ip_address(host)
+           if ip.is_private or ip.is_loopback or ip.is_site_local:
+               return False
+       except ValueError:
+            pass  # Non è un IP, potrebbe essere un dominio valido
+       return True
+   except Exception:
+        return False
+
+
+@app.route(route="scrape_and_classify", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
+async def scrape_and_classify(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Endpoint che:
+    - riceve un URL di news
+    - fa scraping della pagina
+    - estrae il testo principale
+    - lo passa al modello di classificazione
+    - restituisce testo + risultato
+    """
+    try:
+        body = req.get_json()
+    except ValueError:
+        return func.HttpResponse(
+            json.dumps({"error": "Invalid JSON body"}),
+            status_code=400,
+            mimetype="application/json"
+        )
+
+    url = (body.get("url") or "").strip()
+    if not url:
+        return func.HttpResponse(
+            json.dumps({"error": "Missing 'url' field"}),
+            status_code=400,
+            mimetype="application/json"
+        )
+
+    # Validazione basilare URL
+    if not is_safe_url(url):
+        return func.HttpResponse(
+            json.dumps({"error": "URL is not valid or not allowed"}),
+            status_code=400,
+            mimetype="application/json"
+        )
+
+    logging.info(f"Scraping request for URL: {url}")
+
+    try:
+        # 1) Scarica HTML
+        html = await fetch_html(url)
+
+        # 2) Estrai testo clean
+        article_text = extract_article_text(html)
+
+        word_count = len(article_text.split())
+        if word_count < MIN_WORDS:
+            return func.HttpResponse(
+                json.dumps({"error": f"Testo estratto troppo breve ({word_count} parole, minimo {MIN_WORDS})"}),
+                status_code=400, mimetype="application/json"
+            )
+        if word_count > MAX_WORDS:
+            return func.HttpResponse(
+                json.dumps({"error": f"Testo estratto troppo lungo ({word_count} parole, massimo {MAX_WORDS})"}),
+                status_code=400, mimetype="application/json"
+            )
+
+
+        # 3) Richiama il tuo pipeline di classificazione esistente
+        load_model_from_blob()  
+
+        X = vectorizer.transform([article_text])
+        prediction = classifier.predict(X)[0]
+        confidence = float(classifier.predict_proba(X)[0].max())
+
+        result = {
+            "url": url,
+            "extracted_text": article_text,
+            "classification": {
+                "is_fake": prediction.upper() == "FAKE",
+                "label": prediction.upper(),
+                "confidence": round(confidence, 4)
+            }
+        }
+
+        return func.HttpResponse(
+            json.dumps(result),
+            status_code=200,
+            mimetype="application/json"
+        )
+
+    except httpx.HTTPStatusError as e:
+        # Il sito remoto ha risposto con 4xx/5xx
+        return func.HttpResponse(
+            json.dumps({"error": f"Remote page returned {e.response.status_code}"}),
+            status_code=502,
+            mimetype="application/json"
+        )
+    except httpx.TimeoutException:
+        return func.HttpResponse(
+            json.dumps({"error": "Request to URL timed out"}),
+            status_code=504,
+            mimetype="application/json"
+        )
+    except httpx.RequestError as e:
+        return func.HttpResponse(
+            json.dumps({"error": f"Could not reach URL: {str(e)}"}),
+            status_code=502,
+            mimetype="application/json"
+        )
+    
+    except Exception as e:
+        logging.error(f"Unexpected error scraping {url}: {e}")
+        return func.HttpResponse(
+            json.dumps({"url": url, "error": "Internal error while scraping or classifying"}),
+            status_code=500,
+            mimetype="application/json"
+        )
