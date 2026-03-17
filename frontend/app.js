@@ -12,7 +12,7 @@ const msalConfig = {
     auth: {
         clientId:    "b0f816de-ed48-4210-a721-31c4f9d46b33",
         authority:   "https://login.microsoftonline.com/9b9afd5e-422c-478f-8fd6-3cb65f0455d8",
-        redirectUri: window.location.origin
+        redirectUri: window.location.origin + "/blank.html"
     },
     cache: {
         cacheLocation:        "localStorage",
@@ -241,8 +241,7 @@ function renderClassificationResult(resultDiv, data, extractedText = null, sourc
         <div class="fn-result__extracted">
             <div class="fn-result__extracted-label">
                 📄 Testo estratto dalla pagina
-                <button class="fn-result__extracted-toggle"
-                        onclick="toggleExtracted(this)">Mostra tutto</button>
+                <button class="fn-result__extracted-toggle" data-toggle-extracted">Mostra tutto</button>
             </div>
             <div class="fn-result__extracted-text">
                 ${sanitize(extractedText)}
@@ -286,16 +285,6 @@ function renderClassificationResult(resultDiv, data, extractedText = null, sourc
     resultDiv.innerHTML = typeof DOMPurify !== 'undefined' ? DOMPurify.sanitize(html) : html;
     resultDiv.className = `fn-result ${isFake ? 'fn-result--fake' : 'fn-result--real'}`;
     resultDiv.style.display = 'block';
-}
-
-// ============================================================================
-// TOGGLE TESTO ESTRATTO
-// ============================================================================
-
-function toggleExtracted(btn) {
-    const textEl = btn.closest('.fn-result__extracted').querySelector('.fn-result__extracted-text');
-    const expanded = textEl.classList.toggle('fn-expanded');
-    btn.textContent = expanded ? 'Mostra meno' : 'Mostra tutto';
 }
 
 // ============================================================================
@@ -382,4 +371,15 @@ document.getElementById('fn-news-text').addEventListener('input', function () {
     const counter = document.getElementById('fn-word-count');
     counter.textContent = `${words} parole`;
     counter.classList.toggle('fn-word-count--warn', words > 0 && words < 10);
+});
+
+
+// Event delegation per il toggle testo estratto
+document.getElementById('fn-result').addEventListener('click', function(e) {
+    const btn = e.target.closest('[data-toggle-extracted]');
+    if (!btn) return;
+    const textEl = btn.closest('.fn-result__extracted')
+                      .querySelector('.fn-result__extracted-text');
+    const expanded = textEl.classList.toggle('fn-expanded');
+    btn.textContent = expanded ? 'Mostra meno' : 'Mostra tutto';
 });
