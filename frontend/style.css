@@ -488,7 +488,7 @@ textarea:focus {
 
 .fn-result__extracted-text.fn-expanded {
     max-height: 400px;
-    overflow-y: auto;
+    overflow: visible;
 }
 
 /* ============================================================================

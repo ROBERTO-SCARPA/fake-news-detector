@@ -735,9 +735,16 @@ def classify_batch(req: func.HttpRequest) -> func.HttpResponse:
                 )
             
             clean_text = text.strip()
-            if len(clean_text) < 20:
+            word_count = len(clean_text.split())
+            if word_count < MIN_WORDS:
                 return func.HttpResponse(
-                    json.dumps({"error": f"Text at index {idx} too short (min 30 words)"}),
+                    json.dumps({"error": f"Text at index {idx} too short (min {MIN_WORDS} words)"}),
+                    status_code=400,
+                    mimetype="application/json"
+                )
+            if word_count > MAX_WORDS:
+                return func.HttpResponse(
+                    json.dumps({"error": f"Text at index {idx} too long (max {MAX_WORDS} words)"}),
                     status_code=400,
                     mimetype="application/json"
                 )

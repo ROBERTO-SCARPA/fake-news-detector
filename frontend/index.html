@@ -14,7 +14,7 @@
         <header class="app-header">
             <h1 class="app-header__title">Fake News Detector</h1>
             <p class="app-header__subtitle">
-                Analizza un testo o un URL per scoprire se una news è fake o reale
+                Analyze a text or URL to discover if a news article is fake or real
             </p>
             <div id="fn-user-info"></div>
         </header>
@@ -27,7 +27,7 @@
                     aria-selected="true"
                     aria-controls="panel-text"
                     onclick="switchTab('text')">
-                Analizza Testo
+                Analyze Text
             </button>
             <button class="fn-tab"
                     id="tab-url"
@@ -35,39 +35,39 @@
                     aria-selected="false"
                     aria-controls="panel-url"
                     onclick="switchTab('url')">
-                Analizza URL
+                Analyze URL
             </button>
         </div>
 
         <!-- PANEL: TESTO -->
         <div class="fn-panel fn-panel--active" id="panel-text" role="tabpanel" aria-labelledby="tab-text">
             <label class="fn-label" for="fn-news-text">
-                Incolla il testo della news da analizzare
-                <span class="fn-label__hint">Ctrl+Invio per inviare</span>
+                Paste the news text to analyze
+                <span class="fn-label__hint">Ctrl+Enter to submit</span>
             </label>
             <textarea id="fn-news-text"
-                      placeholder="Copia e incolla qui il testo della news..."></textarea>
-            <div class="fn-word-count" id="fn-word-count">0 parole</div>
+                      placeholder="Paste the news text here..."></textarea>
+            <div class="fn-word-count" id="fn-word-count">0 words</div>
             <button onclick="classifyNews()" id="fn-analyze-btn" class="fn-btn fn-btn--primary">
-                Analizza Testo
+                Analyze Text
             </button>
         </div>
 
         <!-- PANEL: URL -->
         <div class="fn-panel" id="panel-url" role="tabpanel" aria-labelledby="tab-url">
             <label class="fn-label" for="fn-news-url">
-                Inserisci l'URL dell'articolo da analizzare
-                <span class="fn-label__hint">Funziona con la maggior parte dei siti di news</span>
+                Enter the URL of the article to analyze
+                <span class="fn-label__hint">Works with most news websites</span>
             </label>
             <div class="fn-url-wrapper">
                 <span class="fn-url-wrapper__icon">🔗</span>
                 <input type="url"
                        id="fn-news-url"
                        class="fn-url-input"
-                       placeholder="https://www.example.com/articolo-news..."/>
+                       placeholder="https://www.example.com/news-article..."/>
             </div>
             <button onclick="scrapeAndClassify()" id="fn-scrape-btn" class="fn-btn fn-btn--primary">
-                Analizza URL
+                Analyze URL
             </button>
         </div>
 

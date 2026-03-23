@@ -59,10 +59,10 @@ async function loginWithAzureAD() {
         return resp;
     } catch (error) {
         if (error.errorCode === "user_cancelled")
-            throw new Error("Login annullato dall'utente.");
+            throw new Error("Login cancelled by the user.");
         if (error.errorCode === "popup_window_error")
-            throw new Error("Impossibile aprire il popup. Verifica il popup blocker.");
-        throw new Error(`Login fallito: ${error.errorMessage || error.message}`);
+            throw new Error("Unable to open the popup. Please check your popup blocker.");
+        throw new Error(`Login failed: ${error.errorMessage || error.message}`);
     }
 }
 
@@ -80,7 +80,7 @@ async function getAccessToken() {
             return resp.accessToken;
         } catch (err) {
             currentAccount = null;
-            throw new Error("Impossibile ottenere il token. Riprova.");
+            throw new Error("Unable to obtain the token. Please try again.");
         }
     }
 }
@@ -127,21 +127,21 @@ async function classifyNews() {
     const text      = document.getElementById('fn-news-text').value.trim();
 
     if (!text) {
-        setSimpleState(resultDiv, 'fn-result--warning', '⚠️ Inserisci un testo prima di analizzare.');
+        setSimpleState(resultDiv, 'fn-result--warning', '⚠️ Please enter some text before analyzing.');
         return;
     }
 
-    setLoading(btn, 'fn-analyze-btn', '⏳ Autenticazione...');
+    setLoading(btn, 'fn-analyze-btn', '⏳ Authentication...');
     setSimpleState(resultDiv, 'fn-result--loading',
-        '<span class="fn-loading-spinner"></span> Autenticazione in corso...'
+        '<span class="fn-loading-spinner"></span> Authentication in progress...'
     );
 
     try {
         const token = await getAccessToken();
 
-        updateBtnText(btn, '⏳ Analisi in corso...');
+        updateBtnText(btn, '⏳ Analysis in progress...');
         setSimpleState(resultDiv, 'fn-result--loading',
-            '<span class="fn-loading-spinner"></span> Analisi del testo in corso...'
+            '<span class="fn-loading-spinner"></span> Text analysis in progress...'
         );
 
         const response = await fetch(CONFIG.CLASSIFY_URL, {
@@ -159,7 +159,7 @@ async function classifyNews() {
     } catch (err) {
         setSimpleState(resultDiv, 'fn-result--error', `❌ ${err.message}`);
     } finally {
-        resetBtn(btn, 'Analizza Testo');
+        resetBtn(btn, 'Analyze Text');
     }
 }
 
@@ -173,26 +173,26 @@ async function scrapeAndClassify() {
     const url       = document.getElementById('fn-news-url').value.trim();
 
     if (!url) {
-        setSimpleState(resultDiv, 'fn-result--warning', '⚠️ Inserisci un URL prima di analizzare.');
+        setSimpleState(resultDiv, 'fn-result--warning', '⚠️ Please enter a URL before analyzing.');
         return;
     }
 
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
-        setSimpleState(resultDiv, 'fn-result--warning', '⚠️ L\'URL deve iniziare con http:// o https://');
+        setSimpleState(resultDiv, 'fn-result--warning', '⚠️ The URL must start with http:// or https://');
         return;
     }
 
-    setLoading(btn, 'fn-scrape-btn', '⏳ Autenticazione...');
+    setLoading(btn, 'fn-scrape-btn', '⏳ Authentication...');
     setSimpleState(resultDiv, 'fn-result--loading',
-        '<span class="fn-loading-spinner"></span> Autenticazione in corso...'
+        '<span class="fn-loading-spinner"></span> Authentication in progress...'
     );
 
     try {
         const token = await getAccessToken();
 
-        updateBtnText(btn, '⏳ Scraping pagina...');
+        updateBtnText(btn, '⏳ Scraping page...');
         setSimpleState(resultDiv, 'fn-result--loading',
-            '<span class="fn-loading-spinner"></span> Download e analisi della pagina in corso...'
+            '<span class="fn-loading-spinner"></span> Download and analysis of the page in progress...'
         );
 
         const response = await fetch(CONFIG.SCRAPE_URL, {
@@ -213,7 +213,7 @@ async function scrapeAndClassify() {
     } catch (err) {
         setSimpleState(resultDiv, 'fn-result--error', `❌ ${err.message}`);
     } finally {
-        resetBtn(btn, 'Analizza URL');
+        resetBtn(btn, 'Analyze URL');
     }
 }
 
@@ -223,25 +223,25 @@ async function scrapeAndClassify() {
 
 function renderClassificationResult(resultDiv, data, extractedText = null, sourceUrl = null) {
     if (!data || typeof data.is_fake !== 'boolean' || typeof data.confidence !== 'number') {
-        setSimpleState(resultDiv, 'fn-result--error', '❌ Risposta API non valida.');
+        setSimpleState(resultDiv, 'fn-result--error', 'Invalid API response.');
         return;
     }
 
-    const isFake     = data.is_fake;
+    const isFake = data.is_fake;
     const confidence = Math.max(0, Math.min(100, data.confidence * 100)).toFixed(1);
-    const safeLabel  = sanitize(data.label?.toUpperCase() ?? (isFake ? 'FAKE' : 'REAL'));
+    const safeLabel = sanitize(data.label?.toUpperCase() ?? (isFake ? 'FAKE' : 'REAL'));
 
-    const warningHtml = confidence < 70 ? `
+    const warningHtml = confidence < 80 ? `
         <div class="fn-result__warning">
-            ⚠️ <strong>Confidenza bassa (${confidence}%):</strong> 
-            Il modello non è sicuro del risultato. Verifica la fonte manualmente.
+            ⚠️ <strong>Low confidence (${confidence}%):</strong> 
+            The model is not sure about the result. Please verify the source manually.
         </div>` : '';
 
     const extractedHtml = extractedText ? `
         <div class="fn-result__extracted">
             <div class="fn-result__extracted-label">
-                📄 Testo estratto dalla pagina
-                <button class="fn-result__extracted-toggle" data-toggle-extracted">Mostra tutto</button>
+                📄 Extracted text from the page
+                <button type="button" class="fn-result__extracted-toggle" data-toggle-extracted>Show all</button>
             </div>
             <div class="fn-result__extracted-text">
                 ${sanitize(extractedText)}
@@ -250,7 +250,7 @@ function renderClassificationResult(resultDiv, data, extractedText = null, sourc
 
     const sourceHtml = sourceUrl ? `
         <p class="fn-result__classification">
-            <strong>Fonte:</strong> 
+            <strong>Source:</strong> 
             <a href="${sanitize(sourceUrl)}" target="_blank" rel="noopener noreferrer"
                style="color:#667eea; word-break:break-all;">${sanitize(sourceUrl)}</a>
         </p>` : '';
@@ -262,23 +262,23 @@ function renderClassificationResult(resultDiv, data, extractedText = null, sourc
         </div>
         <div class="fn-result__body">
             <p class="fn-result__confidence-text">
-                <strong>Confidenza del modello:</strong> ${confidence}%
+                <strong>Model confidence:</strong> ${confidence}%
             </p>
             <div class="fn-result__confidence-bar">
                 <div class="fn-result__confidence-fill 
-                     ${isFake ? 'fn-result__confidence-fill--fake' : 'fn-result__confidence-fill--real'}"
+                    ${isFake ? 'fn-result__confidence-fill--fake' : 'fn-result__confidence-fill--real'}"
                      style="--fn-confidence: ${confidence}%">
                 </div>
             </div>
             ${warningHtml}
             <p class="fn-result__classification">
-                <strong>Classificazione:</strong> ${safeLabel}
+                <strong>Classification:</strong> ${safeLabel}
             </p>
             ${sourceHtml}
             ${extractedHtml}
             <p class="fn-result__disclaimer">
-                ℹ️ Il modello è addestrato prevalentemente su notizie in lingua inglese.
-                Le prestazioni su notizie in altre lingue potrebbero essere inferiori.
+                ℹ️ The model is primarily trained on US political news in English.
+                Performance on articles in other languages or topics may be lower.
             </p>
         </div>`;
 
@@ -299,18 +299,18 @@ async function parseResponse(response) {
             if (response.status === 400 && err.error) {
                 errorMessage = err.error;
                 if (err.word_count !== undefined)
-                    errorMessage += ` (${err.word_count} parole rilevate)`;
+                    errorMessage += ` (${err.word_count} words detected)`;
             } else if (response.status === 401) {
-                errorMessage = '🔐 Autenticazione scaduta. Riprova.';
+                errorMessage = '🔐 Authentication expired. Please try again.';
                 currentAccount = null;
             } else if (response.status === 403) {
-                errorMessage = '⛔ Non hai i permessi per questa API.';
+                errorMessage = '⛔ You do not have permissions for this API.';
             } else if (response.status === 429) {
-                errorMessage = '⏱️ Troppe richieste. Riprova tra qualche minuto.';
+                errorMessage = '⏱️ Too many requests. Please try again in a few minutes.';
             } else if (response.status === 502 || response.status === 504) {
-                errorMessage = '🌐 Impossibile raggiungere la pagina remota.';
+                errorMessage = '🌐 Unable to reach the remote page.';
             } else if (response.status === 503) {
-                errorMessage = '🛠️ Servizio temporaneamente non disponibile.';
+                errorMessage = '🛠️ Service temporarily unavailable.';
             } else if (err.error) {
                 errorMessage = err.error;
             }
@@ -369,7 +369,7 @@ document.getElementById('fn-news-url').addEventListener('keydown', function (e) 
 document.getElementById('fn-news-text').addEventListener('input', function () {
     const words = this.value.trim() ? this.value.trim().split(/\s+/).length : 0;
     const counter = document.getElementById('fn-word-count');
-    counter.textContent = `${words} parole`;
+    counter.textContent = `${words} words`;
     counter.classList.toggle('fn-word-count--warn', words > 0 && words < 10);
 });
 
@@ -378,8 +378,8 @@ document.getElementById('fn-news-text').addEventListener('input', function () {
 document.getElementById('fn-result').addEventListener('click', function(e) {
     const btn = e.target.closest('[data-toggle-extracted]');
     if (!btn) return;
-    const textEl = btn.closest('.fn-result__extracted')
-                      .querySelector('.fn-result__extracted-text');
+    const textEl = btn.closest('.fn-result__extracted').querySelector('.fn-result__extracted-text');
     const expanded = textEl.classList.toggle('fn-expanded');
-    btn.textContent = expanded ? 'Mostra meno' : 'Mostra tutto';
+    btn.textContent = expanded ? 'Show less' : 'Show all';
 });
+
