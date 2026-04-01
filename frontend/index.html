@@ -1,84 +1,376 @@
 <!DOCTYPE html>
-<html lang="it">
+<html class="light" lang="it">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
     <title>Fake News Detector</title>
-    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "on-secondary-fixed-variant": "#005047",
+              "surface-container-low":      "#f3f4f5",
+              "surface-tint":               "#005bc0",
+              "surface-variant":            "#e1e3e4",
+              "on-secondary-fixed":         "#00201b",
+              "error":                      "#ba1a1a",
+              "tertiary-fixed-dim":         "#88d982",
+              "primary":                    "#003e87",
+              "on-tertiary":                "#ffffff",
+              "on-primary-fixed-variant":   "#004493",
+              "primary-fixed":              "#d8e2ff",
+              "primary-fixed-dim":          "#adc7ff",
+              "tertiary-container":         "#12661e",
+              "secondary-fixed-dim":        "#7ad7c6",
+              "outline":                    "#717781",
+              "on-primary":                 "#ffffff",
+              "background":                 "#f8f9fa",
+              "error-container":            "#ffdad6",
+              "tertiary-fixed":             "#a3f69c",
+              "on-tertiary-fixed":          "#002204",
+              "on-surface":                 "#191c1d",
+              "inverse-surface":            "#2e3132",
+              "on-secondary-container":     "#006f62",
+              "tertiary":                   "#004c10",
+              "surface":                    "#f8f9fa",
+              "secondary-fixed":            "#97f3e2",
+              "on-primary-fixed":           "#001a41",
+              "secondary":                  "#006b5e",
+              "surface-container-high":     "#e7e8e9",
+              "surface-container-lowest":   "#ffffff",
+              "on-secondary":               "#ffffff",
+              "surface-container":          "#edeeef",
+              "on-background":              "#191c1d",
+              "surface-dim":                "#d9dadb",
+              "secondary-container":        "#94f0df",
+              "primary-container":          "#0054b3",
+              "on-error":                   "#ffffff",
+              "on-tertiary-fixed-variant":  "#005312",
+              "outline-variant":            "#c1c7d1",
+              "on-primary-container":       "#b9ceff",
+              "on-surface-variant":         "#414750",
+              "on-tertiary-container":      "#90e28a",
+              "surface-container-highest":  "#e1e3e4",
+              "inverse-primary":            "#adc7ff",
+              "inverse-on-surface":         "#f0f1f2",
+              "on-error-container":         "#93000a",
+              "surface-bright":             "#f8f9fa"
+            },
+            fontFamily: {
+              "headline": ["Manrope"],
+              "body":     ["Inter"],
+              "label":    ["Inter"]
+            },
+            borderRadius: {
+              "DEFAULT": "0.25rem",
+              "lg":      "0.5rem",
+              "xl":      "0.75rem",
+              "2xl":     "1.5rem",
+              "full":    "9999px"
+            }
+          }
+        }
+      }
+    </script>
+    <link rel="stylesheet" href="style.css"/>
+    <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.36.0/lib/msal-browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.5/dist/purify.min.js"></script>
 </head>
-<body>
 
-    <div class="container">
+<body class="bg-surface text-on-surface font-body antialiased">
+    <!-- HEADER -->
+    <div id="header-container"></div>
 
-        <!-- HEADER -->
-        <header class="app-header">
-            <h1 class="app-header__title">Fake News Detector</h1>
-            <p class="app-header__subtitle">
-                Analyze a text or URL to discover if a news article is fake or real
-            </p>
-            <div id="fn-user-info"></div>
-        </header>
+    <!-- MAIN -->
+    <main class="pt-28 pb-20 px-6 max-w-7xl mx-auto">
 
-        <!-- TABS -->
-        <div class="fn-tabs" role="tablist">
-            <button class="fn-tab fn-tab--active"
-                    id="tab-text"
-                    role="tab"
-                    aria-selected="true"
-                    aria-controls="panel-text"
-                    onclick="switchTab('text')">
-                Analyze Text
-            </button>
-            <button class="fn-tab"
-                    id="tab-url"
-                    role="tab"
-                    aria-selected="false"
-                    aria-controls="panel-url"
-                    onclick="switchTab('url')">
-                Analyze URL
-            </button>
+        <!-- *** BANNER QUOTA ANONIMA ***
+             Visibile solo agli utenti non loggati.
+             Nascosto via JS dopo login (fn-anon-banner--hidden).
+             Diventa rosso quando quota esaurita (fn-anon-banner--exhausted). -->
+        <div id="fn-anon-banner" class="fn-anon-banner mb-6 px-5 py-3 rounded-xl flex items-center gap-3 flex-wrap">
+            <span class="material-symbols-outlined text-base" style="font-size:1.1rem;">warning</span>
+            <span class="text-sm font-medium">
+                You are browsing as a <strong>guest</strong>:
+                <span id="fn-anon-remaining" class="font-black">3</span> free analyses remaining today. Login with Entra ID for unlimited access.
+            </span>
+
         </div>
 
-        <!-- PANEL: TESTO -->
-        <div class="fn-panel fn-panel--active" id="panel-text" role="tabpanel" aria-labelledby="tab-text">
-            <label class="fn-label" for="fn-news-text">
-                Paste the news text to analyze
-                <span class="fn-label__hint">Ctrl+Enter to submit</span>
-            </label>
-            <textarea id="fn-news-text"
-                      placeholder="Paste the news text here..."></textarea>
-            <div class="fn-word-count" id="fn-word-count">0 words</div>
-            <button onclick="classifyNews()" id="fn-analyze-btn" class="fn-btn fn-btn--primary">
-                Analyze Text
-            </button>
-        </div>
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-10">
 
-        <!-- PANEL: URL -->
-        <div class="fn-panel" id="panel-url" role="tabpanel" aria-labelledby="tab-url">
-            <label class="fn-label" for="fn-news-url">
-                Enter the URL of the article to analyze
-                <span class="fn-label__hint">Works with most news websites</span>
-            </label>
-            <div class="fn-url-wrapper">
-                <span class="fn-url-wrapper__icon">🔗</span>
-                <input type="url"
-                       id="fn-news-url"
-                       class="fn-url-input"
-                       placeholder="https://www.example.com/news-article..."/>
+
+            <!-- COLONNA SINISTRA — Input & Analisi -->
+            <div class="lg:col-span-7 flex flex-col space-y-8">
+                <section class="bg-surface-container-lowest rounded-2xl p-8 fn-card-shadow">
+
+
+                    <div class="mb-8">
+                        <h1 class="font-headline text-3xl font-extrabold tracking-tight text-primary mb-2">
+                            Analyze News
+                        </h1>
+                        <p class="font-body text-sm text-on-surface-variant max-w-lg">
+                            Paste a text or link to verify the credibility of the information.
+                        </p>
+                    </div>
+
+
+                    <!-- Tab Switcher -->
+                    <div class="fn-tab-container flex p-1 bg-surface-container-low rounded-full mb-6 max-w-xs"
+                         role="tablist" aria-label="Modalità di analisi">
+                        <button
+                            id="tab-text"
+                            role="tab"
+                            aria-selected="true"
+                            aria-controls="panel-text"
+                            onclick="switchTab('text')"
+                            class="fn-tab fn-tab--active flex-1 py-2 px-4 rounded-full text-sm font-bold flex items-center justify-center gap-2">
+                            <span class="material-symbols-outlined text-sm">description</span>
+                            Text Analysis
+                        </button>
+                        <button
+                            id="tab-url"
+                            role="tab"
+                            aria-selected="false"
+                            aria-controls="panel-url"
+                            onclick="switchTab('url')"
+                            class="fn-tab flex-1 py-2 px-4 rounded-full text-sm font-medium flex items-center justify-center gap-2">
+                            <span class="material-symbols-outlined text-sm">link</span>
+                            URL Analysis
+                        </button>
+                    </div>
+
+
+                    <!-- Panel: Text -->
+                    <div id="panel-text" role="tabpanel" aria-labelledby="tab-text"
+                         class="fn-panel fn-panel--active space-y-6">
+                        <div class="relative group">
+                            <textarea
+                                id="fn-news-text"
+                                class="fn-input w-full h-64 rounded-xl p-5 resize-none font-body"
+                                placeholder="Inserisci qui il testo dell'articolo da analizzare..."
+                                aria-label="Testo dell'articolo da analizzare"
+                                maxlength="40000"></textarea>
+                            <div class="absolute bottom-4 right-4">
+                                <span id="fn-word-count" class="fn-word-count text-xs font-medium">0 words</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-4">
+                            <button
+                                id="fn-analyze-btn"
+                                onclick="classifyNews()"
+                                class="fn-btn-primary flex items-center gap-2 px-8 py-3 rounded-full font-bold">
+                                <span class="material-symbols-outlined">bolt</span>
+                                Start Analysis
+                            </button>
+                        </div>
+                    </div>
+
+
+                    <!-- Panel: URL -->
+                    <div id="panel-url" role="tabpanel" aria-labelledby="tab-url"
+                         class="fn-panel space-y-6">
+                        <div class="relative">
+                            <input
+                                id="fn-news-url"
+                                type="url"
+                                class="fn-input w-full rounded-xl px-5 py-4 font-body"
+                                placeholder="https://esempio.com/articolo-da-analizzare"
+                                aria-label="URL dell'articolo da analizzare"/>
+                        </div>
+                        <div class="flex items-center gap-4">
+                            <button
+                                id="fn-scrape-btn"
+                                onclick="scrapeAndClassify()"
+                                class="fn-btn-primary flex items-center gap-2 px-8 py-3 rounded-full font-bold">
+                                <span class="material-symbols-outlined">travel_explore</span>
+                                Analyze URL
+                            </button>
+                        </div>
+                    </div>
+
+
+                    <!-- Disclaimer -->
+                    <div class="mt-8 pt-6 border-t border-surface-container-high flex items-start gap-3">
+                        <span class="material-symbols-outlined text-outline-variant">info</span>
+                        <p class="text-xs text-outline font-medium italic">
+                            Model trained on 40,000 English-language news articles on US politics.
+                            Accuracy can change based on language and topic.
+                        </p>
+                    </div>
+                </section>
+
+
+                <!-- Barra di Progresso -->
+                <div id="fn-progress-section"
+                     class="fn-progress-section bg-surface-container-low rounded-xl p-6 border-l-4 border-primary hidden">
+                    <div class="flex justify-between items-center mb-4">
+                        <span class="text-sm font-bold text-primary flex items-center gap-2">
+                            <span class="material-symbols-outlined fn-spin text-sm">sync</span>
+                            Analysis ongoing...
+                        </span>
+                        <span id="fn-progress-pct" class="text-xs font-bold text-on-surface-variant">0%</span>
+                    </div>
+                    <div class="w-full bg-surface-container-highest rounded-full h-2 overflow-hidden">
+                        <div id="fn-progress-bar"
+                             class="bg-primary h-full rounded-full transition-all duration-500"
+                             style="width:0%">
+                        </div>
+                    </div>
+                </div>
+
+
+                <!-- Result Box (dinamico via JS) -->
+                <div id="fn-result" class="fn-result" style="display:none;"
+                     role="status" aria-live="polite">
+                </div>
             </div>
-            <button onclick="scrapeAndClassify()" id="fn-scrape-btn" class="fn-btn fn-btn--primary">
-                Analyze URL
-            </button>
+
+
+            <!-- COLONNA DESTRA — Gauge & Results -->
+            <aside class="lg:col-span-5">
+                <div class="fn-results-panel bg-surface-container-lowest rounded-2xl p-8 fn-card-shadow sticky top-28">
+                    <div class="flex items-center justify-between mb-8">
+                        <h2 class="font-headline text-xl font-bold text-on-surface">Analysis results</h2>
+                        <span class="fn-badge-live bg-secondary-fixed text-on-secondary-fixed px-3 py-1 rounded-full text-[10px] font-black tracking-widest uppercase">
+                            Live View
+                        </span>
+                    </div>
+
+
+                    <!-- Gauge Box -->
+                    <div class="fn-gauge-box flex flex-col items-center justify-center py-10 space-y-8 bg-surface-container-low rounded-2xl">
+
+
+                        <!-- SVG Gauge -->
+                        <div class="relative flex items-center justify-center">
+                            <svg class="w-56 h-56 transform -rotate-90" viewBox="0 0 224 224" aria-hidden="true">
+                                <circle
+                                    class="text-surface-container-highest"
+                                    cx="112" cy="112" r="100"
+                                    fill="transparent"
+                                    stroke="currentColor"
+                                    stroke-width="12"/>
+                                <circle
+                                    id="fn-gauge-circle"
+                                    class="fn-gauge-circle text-secondary-fixed-dim"
+                                    cx="112" cy="112" r="100"
+                                    fill="transparent"
+                                    stroke="currentColor"
+                                    stroke-dasharray="628"
+                                    stroke-dashoffset="314"
+                                    stroke-width="12"
+                                    stroke-linecap="round"/>
+                            </svg>
+                            <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
+                                <span id="fn-gauge-score"
+                                      class="font-headline text-5xl font-extrabold text-primary">—</span>
+                                <span class="text-xs font-bold text-on-surface-variant tracking-wider uppercase">
+                                    Confidence Score
+                                </span>
+                            </div>
+                        </div>
+
+
+                        <!-- Status Label -->
+                        <div id="fn-status-label"
+                             class="fn-status-label fn-status-label--idle px-8 py-3 rounded-full flex flex-col items-center shadow-md">
+                            <span id="fn-status-text"
+                                  class="font-headline text-2xl font-black tracking-tighter">
+                                AWAITING
+                            </span>
+                            <span class="text-[10px] font-bold uppercase tracking-widest opacity-70">
+                                Current Status
+                            </span>
+                        </div>
+
+
+                        <!-- Truth Meter -->
+                        <div class="w-full px-8 space-y-3">
+                            <div class="flex justify-between text-[10px] font-bold uppercase text-on-surface-variant tracking-widest">
+                                <span>Fake</span>
+                                <span>Neutral</span>
+                                <span>Real</span>
+                            </div>
+                            <div class="fn-truth-meter relative h-2 w-full rounded-full">
+                                <div id="fn-truth-indicator"
+                                     class="fn-truth-indicator absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full shadow-lg border-2 border-secondary ring-4 ring-secondary/20"
+                                     style="left: 50%;">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+
+                    <!-- Analysis Detail List -->
+                    <div class="mt-8 space-y-4">
+
+
+                        <div class="fn-detail-item flex items-start gap-4 p-4 rounded-xl">
+                            <div class="fn-detail-icon bg-secondary-container p-2 rounded-lg">
+                                <span class="material-symbols-outlined text-on-secondary-container">psychology</span>
+                            </div>
+                            <div>
+                                <h4 class="font-bold text-sm text-on-surface">Semantic Analysis</h4>
+                                <p id="fn-detail-semantic-text"
+                                   class="text-xs text-on-surface-variant mt-1">
+                                    Waiting for results...
+                                </p>
+                            </div>
+                        </div>
+
+
+                        <div class="fn-detail-item flex items-start gap-4 p-4 rounded-xl">
+                            <div class="fn-detail-icon bg-tertiary-container p-2 rounded-lg">
+                                <span class="material-symbols-outlined text-on-tertiary-container">fact_check</span>
+                            </div>
+                            <div>
+                                <h4 class="font-bold text-sm text-on-surface">Verify Sources</h4>
+                                <p id="fn-detail-sources-text"
+                                   class="text-xs text-on-surface-variant mt-1">
+                                    No analysis performed.
+                                </p>
+                            </div>
+                        </div>
+
+
+                        <div class="fn-detail-item flex items-start gap-4 p-4 rounded-xl">
+                            <div class="fn-detail-icon bg-primary-fixed p-2 rounded-lg">
+                                <span class="material-symbols-outlined text-primary">analytics</span>
+                            </div>
+                            <div>
+                                <h4 class="font-bold text-sm text-on-surface">Model Confidence</h4>
+                                <p id="fn-detail-confidence-text"
+                                   class="text-xs text-on-surface-variant mt-1">
+                                    No analysis performed.
+                                </p>
+                            </div>
+                        </div>
+
+
+                    </div>
+                </div>
+            </aside>
+
+
         </div>
+    </main>
 
-        <!-- RISULTATO -->
-        <div id="fn-result"></div>
+     <script>
+        // Load header.html into header-container
+        fetch('header.html')
+            .then(response => response.text())
+            .then(data => {
+                document.getElementById('header-container').innerHTML = data;
+            })
+            .catch(error => console.error('Error loading header:', error));
+    </script>
 
-    </div>
-
-    <script src="https://alcdn.msauth.net/browser/2.38.2/js/msal-browser.min.js"
-            crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
