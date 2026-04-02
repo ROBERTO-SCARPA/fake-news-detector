@@ -1,10 +1,3 @@
-/**
- * Veracity Layer — script.js
- * Frontend Fake News Detector
- * Auth  : Azure AD via MSAL.js
- * API   : Azure API Management (classify_news + scrape_and_classify)
- */
-
 // ============================================================================
 // CONFIGURAZIONE
 // ============================================================================
@@ -30,6 +23,34 @@ const CONFIG = {
     SCRAPE_URL:   "https://apim-fakenews-2026.azure-api.net/fakenewsdetector/scrape_and_classify"
 };
 
+
+// ============================================================================
+// GUEST QUOTA
+// ============================================================================
+const GUEST_QUOTA_URL = 'https://apim-fakenews-2026.azure-api.net/fakenewsdetector/guest_usage';
+
+async function checkGuestUsage() {
+    try {
+        const resp = await fetch(GUEST_QUOTA_URL, { cache: 'no-store' });
+        if (!resp.ok) return { allowed: true, remaining: 3, used: 0, limit: 3 };
+        return await resp.json();
+    } catch {
+        return { allowed: true, remaining: 3, used: 0, limit: 3 }; // Fail open
+    }
+}
+
+function updateGuestQuotaUI(used, limit) {
+    const badge = document.getElementById('fn-guest-quota');
+    if (!badge || currentAccount) return; // Hide for logged-in users
+    const remaining = Math.max(0, limit - used);
+    badge.textContent = remaining > 0
+        ? `${remaining} free ${remaining === 1 ? 'analysis' : 'analyses'} left`
+        : 'Free limit reached — log in to continue';
+    badge.classList.toggle('fn-quota--exhausted', remaining === 0);
+    badge.style.display = 'inline-flex';
+}
+
+
 let msalInstance     = null;
 let currentAccount   = null;
 let progressInterval = null;
@@ -53,6 +74,10 @@ try {
     if (accounts.length > 0) {
         currentAccount = accounts[0];
         updateUIForLoggedInUser();
+    } else {
+        // Guest: populate quota badge on first page load
+        const quota = await checkGuestUsage();
+        updateGuestQuotaUI(quota.used, quota.limit);
     }
 })();
 
@@ -370,40 +395,92 @@ async function classifyNews() {
         return;
     }
 
+    // ── GUEST PATH ────────────────────────────────────────────────────────────
+    if (!currentAccount) {
+        const quota = await checkGuestUsage();
+        updateGuestQuotaUI(quota.used, quota.limit);
+
+        if (!quota.allowed) {
+            setSimpleState(resultDiv, 'fn-result--warning',
+                `⚠️ You have used all ${quota.limit} free analyses. ` +
+                `<a href="#" onclick="loginWithAzureAD();return false;">Log in</a> ` +
+                `to continue with unlimited analyses.`);
+            return;
+        }
+
+        setLoading(btn, '⏳ Analysis in progress...');
+        resetDetailItems();
+        showProgress(true);
+        setSimpleState(resultDiv, 'fn-result--loading',
+            '<span class="fn-loading-spinner"></span> Analysis in progress...');
+
+        try {
+            const response = await fetch(CONFIG.CLASSIFY_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }, // No Authorization
+                body: JSON.stringify({ text })
+            });
+
+            // Handle 429 returned by function (quota exceeded — race condition)
+            if (response.status === 429) {
+                const errData = await response.json().catch(() => ({}));
+                showProgress(false);
+                setSimpleState(resultDiv, 'fn-result--warning',
+                    `⚠️ ${errData.message || 'Free analysis limit reached. Please log in to continue.'}`);
+                // Refresh badge to show 0 remaining
+                const updated = await checkGuestUsage();
+                updateGuestQuotaUI(updated.used, updated.limit);
+                return;
+            }
+
+            const data = await parseResponse(response);
+            showProgress(false);
+            renderClassificationResult(resultDiv, data, null);
+
+            // Refresh badge after successful analysis
+            const updated = await checkGuestUsage();
+            updateGuestQuotaUI(updated.used, updated.limit);
+
+        } catch (err) {
+            showProgress(false);
+            resetGauge();
+            setSimpleState(resultDiv, 'fn-result--error', `❌ ${err.message}`);
+        } finally {
+            resetBtn(btn, 'Start Analysis');
+        }
+        return; // ← exit guest path
+    }
+
+    // ── AUTHENTICATED PATH (existing logic — unchanged) ───────────────────────
     setLoading(btn, '⏳ Authentication...');
     resetDetailItems();
     showProgress(true);
     setSimpleState(resultDiv, 'fn-result--loading',
-        '<span class="fn-loading-spinner"></span> Authentication in progress...'
-    );
+        '<span class="fn-loading-spinner"></span> Authentication in progress...');
 
     try {
         const token = await getAccessToken();
-
         updateBtnText(btn, '⏳ Analysis in progress...');
         setSimpleState(resultDiv, 'fn-result--loading',
-            '<span class="fn-loading-spinner"></span> Analysis in progress...'
-        );
+            '<span class="fn-loading-spinner"></span> Analysis in progress...');
 
         const response = await fetch(CONFIG.CLASSIFY_URL, {
             method: 'POST',
             headers: {
-                'Content-Type':  'application/json',
+                'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`
             },
             body: JSON.stringify({ text })
         });
-
         const data = await parseResponse(response);
         showProgress(false);
         renderClassificationResult(resultDiv, data, null);
-
     } catch (err) {
         showProgress(false);
         resetGauge();
         setSimpleState(resultDiv, 'fn-result--error', `❌ ${err.message}`);
     } finally {
-        resetBtn(btn, 'Inizia Analisi');
+        resetBtn(btn, 'Start Analysis');
     }
 }
 
@@ -428,20 +505,74 @@ async function scrapeAndClassify() {
         return;
     }
 
+    // ── GUEST PATH ────────────────────────────────────────────────────────────
+    if (!currentAccount) {
+        const quota = await checkGuestUsage();
+        updateGuestQuotaUI(quota.used, quota.limit);
+
+        if (!quota.allowed) {
+            setSimpleState(resultDiv, 'fn-result--warning',
+                `⚠️ You have used all ${quota.limit} free analyses. ` +
+                `<a href="#" onclick="loginWithAzureAD();return false;">Log in</a> ` +
+                `to continue with unlimited analyses.`);
+            return;
+        }
+
+        setLoading(btn, '⏳ Analysis in progress...');
+        resetDetailItems();
+        showProgress(true);
+        setSimpleState(resultDiv, 'fn-result--loading',
+            '<span class="fn-loading-spinner"></span> Download and page analysis in progress...');
+
+        try {
+            const response = await fetch(CONFIG.SCRAPE_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }, // No Authorization
+                body: JSON.stringify({ url })
+            });
+
+            // Handle 429 from APIM (quota exceeded — race condition)
+            if (response.status === 429) {
+                const errData = await response.json().catch(() => ({}));
+                showProgress(false);
+                setSimpleState(resultDiv, 'fn-result--warning',
+                    `⚠️ ${errData.message || 'Free analysis limit reached. Please log in to continue.'}`);
+                const updated = await checkGuestUsage();
+                updateGuestQuotaUI(updated.used, updated.limit);
+                return;
+            }
+
+            const data = await parseResponse(response);
+            showProgress(false);
+            renderClassificationResult(resultDiv, data.classification, data.extracted_text, url);
+
+            // Refresh badge after successful analysis
+            const updated = await checkGuestUsage();
+            updateGuestQuotaUI(updated.used, updated.limit);
+
+        } catch (err) {
+            showProgress(false);
+            resetGauge();
+            setSimpleState(resultDiv, 'fn-result--error', `❌ ${err.message}`);
+        } finally {
+            resetBtn(btn, 'Analyze URL');
+        }
+        return; // ← exit guest path
+    }
+
+    // ── AUTHENTICATED PATH (existing logic — unchanged) ───────────────────────
     setLoading(btn, '⏳ Authentication...');
     resetDetailItems();
     showProgress(true);
     setSimpleState(resultDiv, 'fn-result--loading',
-        '<span class="fn-loading-spinner"></span> Authentication in progress...'
-    );
+        '<span class="fn-loading-spinner"></span> Authentication in progress...');
 
     try {
         const token = await getAccessToken();
 
         updateBtnText(btn, '⏳ Scraping pagina...');
         setSimpleState(resultDiv, 'fn-result--loading',
-            '<span class="fn-loading-spinner"></span> Download and page analysis in progress...'
-        );
+            '<span class="fn-loading-spinner"></span> Download and page analysis in progress...');
 
         const response = await fetch(CONFIG.SCRAPE_URL, {
             method: 'POST',
@@ -454,8 +585,6 @@ async function scrapeAndClassify() {
 
         const data = await parseResponse(response);
         showProgress(false);
-        // data.classification = { is_fake, label, confidence }
-        // data.extracted_text = testo estratto
         renderClassificationResult(resultDiv, data.classification, data.extracted_text, url);
 
     } catch (err) {
@@ -653,5 +782,5 @@ document.getElementById('fn-result').addEventListener('click', function (e) {
     const textEl   = btn.closest('.fn-result__extracted')
                         .querySelector('.fn-result__extracted-text');
     const expanded = textEl.classList.toggle('fn-expanded');
-    btn.textContent = expanded ? 'SShow less' : 'Show all';
+    btn.textContent = expanded ? 'Show less' : 'Show all';
 });

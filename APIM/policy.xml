@@ -1,0 +1,263 @@
+<policies>
+    <inbound>
+        <base />
+        <cors allow-credentials="false">
+            <allowed-origins>
+                <origin>*</origin>
+            </allowed-origins>
+            <allowed-methods preflight-result-max-age="300">
+                <method>GET</method>
+                <method>POST</method>
+                <method>OPTIONS</method>
+            </allowed-methods>
+            <allowed-headers>
+                <header>*</header>
+            </allowed-headers>
+            <expose-headers>
+                <header>*</header>
+            </expose-headers>
+        </cors>
+        <choose>
+            <when condition="@(context.Request.Method.Equals("OPTIONS"))">
+                <return-response>
+                    <set-status code="200" reason="OK" />
+                    <set-header name="Access-Control-Allow-Origin" exists-action="override">
+                        <value>*</value>
+                    </set-header>
+                    <set-header name="Access-Control-Allow-Methods" exists-action="override">
+                        <value>GET, POST, OPTIONS</value>
+                    </set-header>
+                    <set-header name="Access-Control-Allow-Headers" exists-action="override">
+                        <value>*</value>
+                    </set-header>
+                </return-response>
+            </when>
+            <otherwise>
+                <choose>
+                    <when condition="@(context.Request.Method == "GET" && context.Request.Url.Path.EndsWith("/guest_usage"))">
+                        <cache-lookup-value key="@("anon_quota:" + context.Request.IpAddress + ":" + DateTime.UtcNow.ToString("yyyyMMdd"))" variable-name="anon-call-count" caching-type="external" default-value="0" />
+                        <return-response>
+                            <set-status code="200" reason="OK" />
+                            <set-header name="Access-Control-Allow-Origin" exists-action="override">
+                                <value>*</value>
+                            </set-header>
+                            <set-header name="Content-Type" exists-action="override">
+                                <value>application/json</value>
+                            </set-header>
+                            <set-header name="Cache-Control" exists-action="override">
+                                <value>no-store</value>
+                            </set-header>
+                            <set-body>@{
+                                int used  = Convert.ToInt32(context.Variables["anon-call-count"]);
+                                int limit = 3;
+                                return new JObject(
+                                    new JProperty("used",      used),
+                                    new JProperty("limit",     limit),
+                                    new JProperty("remaining", Math.Max(0, limit - used)),
+                                    new JProperty("allowed",   used < limit)
+                                ).ToString();
+                            }</set-body>
+                        </return-response>
+                    </when>
+                </choose>
+                <choose>
+                    <when condition="@(context.Request.Headers.ContainsKey("Authorization"))">
+                        <validate-jwt header-name="Authorization" failed-validation-httpcode="401" failed-validation-error-message="Unauthorized. Valid Azure AD JWT token required." require-scheme="Bearer" output-token-variable-name="jwt-token">
+                            <openid-config url="https://login.microsoftonline.com/9b9afd5e-422c-478f-8fd6-3cb65f0455d8/v2.0/.well-known/openid-configuration" />
+                            <audiences>
+                                <audience>api://c5cdb33c-0318-4a0d-a66b-59a330aaabc5</audience>
+                                <audience>c5cdb33c-0318-4a0d-a66b-59a330aaabc5</audience>
+                            </audiences>
+                            <issuers>
+                                <issuer>https://login.microsoftonline.com/9b9afd5e-422c-478f-8fd6-3cb65f0455d8/v2.0</issuer>
+                            </issuers>
+                        </validate-jwt>
+                        <choose>
+                            <when condition="@{
+                                var jwt = (Jwt)context.Variables[&quot;jwt-token&quot;];
+                                bool hasScp = false;
+                                bool hasRole = false;
+                                if (jwt.Claims.ContainsKey(&quot;scp&quot;)) {
+                                    string scopeString = string.Join(&quot; &quot;, jwt.Claims[&quot;scp&quot;]);
+                                    hasScp = scopeString.Contains(&quot;Classify.News&quot;);
+                                }
+                                if (jwt.Claims.ContainsKey(&quot;roles&quot;)) {
+                                    string rolesString = string.Join(&quot; &quot;, jwt.Claims[&quot;roles&quot;]);
+                                    hasRole = rolesString.Contains(&quot;API.Classify&quot;);
+                                }
+                                return !(hasScp || hasRole);
+                            }">
+                                <return-response>
+                                    <set-status code="403" reason="Forbidden" />
+                                    <set-header name="Access-Control-Allow-Origin" exists-action="override">
+                                        <value>*</value>
+                                    </set-header>
+                                    <set-header name="Content-Type" exists-action="override">
+                                        <value>application/json</value>
+                                    </set-header>
+                                    <set-body>@{
+                                        return new JObject(
+                                            new JProperty("error", "forbidden"),
+                                            new JProperty("message", "Insufficient permissions. Token must have scope 'Classify.News' or role 'API.Classify'."),
+                                            new JProperty("status", 403)
+                                        ).ToString();
+                                    }</set-body>
+                                </return-response>
+                            </when>
+                        </choose>
+                        <set-variable name="user-id" value="@{
+                            var jwt = (Jwt)context.Variables[&quot;jwt-token&quot;];
+                            if (jwt.Claims.ContainsKey(&quot;oid&quot;)) { return jwt.Claims[&quot;oid&quot;][0]; }
+                            if (jwt.Claims.ContainsKey(&quot;appid&quot;)) { return jwt.Claims[&quot;appid&quot;][0]; }
+                            return &quot;anonymous&quot;;
+                        }" />
+                        <set-variable name="user-email" value="@{
+                            var jwt = (Jwt)context.Variables[&quot;jwt-token&quot;];
+                            if (jwt.Claims.ContainsKey(&quot;preferred_username&quot;)) { return jwt.Claims[&quot;preferred_username&quot;][0]; }
+                            if (jwt.Claims.ContainsKey(&quot;appid&quot;)) { return &quot;app-client-&quot; + jwt.Claims[&quot;appid&quot;][0]; }
+                            return &quot;unknown&quot;;
+                        }" />
+                        <trace source="jwt-validation" severity="information">
+                            <message>@($"[AUTH] User: {context.Variables["user-email"]} | ID: {context.Variables["user-id"]}")</message>
+                        </trace>
+                    </when>
+                    <otherwise>
+                        <set-variable name="user-id" value="anonymous" />
+                        <set-variable name="user-email" value="anonymous" />
+                        <set-variable name="anon-cache-key" value="@("anon_quota:" + context.Request.IpAddress + ":" + DateTime.UtcNow.ToString("yyyyMMdd"))" />
+                        <cache-lookup-value key="@((string)context.Variables["anon-cache-key"])" variable-name="anon-call-count" caching-type="external" default-value="0" />
+                        <choose>
+                            <when condition="@(Convert.ToInt32(context.Variables["anon-call-count"]) >= 3)">
+                                <return-response>
+                                    <set-status code="429" reason="Too Many Requests" />
+                                    <set-header name="Access-Control-Allow-Origin" exists-action="override">
+                                        <value>*</value>
+                                    </set-header>
+                                    <set-header name="Content-Type" exists-action="override">
+                                        <value>application/json</value>
+                                    </set-header>
+                                    <set-header name="Retry-After" exists-action="override">
+                                        <value>86400</value>
+                                    </set-header>
+                                    <set-body>@{
+                                        return new JObject(
+                                            new JProperty("error", "anonymous_quota_exceeded"),
+                                            new JProperty("message", "You have reached the limit of 3 free analyses per day. Login with your organization account for unlimited access."),
+                                            new JProperty("status", 429),
+                                            new JProperty("retry_after_seconds", 86400)
+                                        ).ToString();
+                                    }</set-body>
+                                </return-response>
+                            </when>
+                        </choose>
+                        <cache-store-value key="@((string)context.Variables["anon-cache-key"])" value="@((Convert.ToInt32(context.Variables["anon-call-count"]) + 1).ToString())" duration="86400" caching-type="external" />
+                        <trace source="anon-quota" severity="information">
+                            <message>@($"[ANON] IP: {context.Request.IpAddress} | Call {Convert.ToInt32(context.Variables["anon-call-count"]) + 1}/3 today")</message>
+                        </trace>
+                    </otherwise>
+                </choose>
+                <rate-limit calls="35" renewal-period="60" />
+                <set-header name="x-functions-key" exists-action="override">
+                    <value>{{func-fakenews-api-key}}</value>
+                </set-header>
+                <set-variable name="requestTime" value="@(DateTime.UtcNow)" />
+            </otherwise>
+        </choose>
+    </inbound>
+    <backend>
+        <forward-request timeout="120" follow-redirects="true" />
+    </backend>
+    <outbound>
+        <base />
+        <set-header name="Strict-Transport-Security" exists-action="override">
+            <value>max-age=31536000; includeSubDomains</value>
+        </set-header>
+        <set-header name="X-Content-Type-Options" exists-action="override">
+            <value>nosniff</value>
+        </set-header>
+        <set-header name="X-Frame-Options" exists-action="override">
+            <value>DENY</value>
+        </set-header>
+        <set-header name="Content-Security-Policy" exists-action="override">
+            <value>default-src 'self'</value>
+        </set-header>
+        <set-header name="X-Powered-By" exists-action="delete" />
+        <set-header name="Server" exists-action="delete" />
+        <set-header name="X-AspNet-Version" exists-action="delete" />
+        <set-header name="X-Response-Time" exists-action="override">
+            <value>@{
+                var start = context.Variables.GetValueOrDefault<DateTime>("requestTime");
+                return (DateTime.UtcNow - start).TotalMilliseconds.ToString("F2") + "ms";
+            }</value>
+        </set-header>
+        <set-header name="X-User-Id" exists-action="override">
+            <value>@(context.Variables.GetValueOrDefault<string>("user-id", "anonymous"))</value>
+        </set-header>
+    </outbound>
+    <on-error>
+        <base />
+        <set-header name="Access-Control-Allow-Origin" exists-action="override">
+            <value>*</value>
+        </set-header>
+        <set-header name="Access-Control-Allow-Headers" exists-action="override">
+            <value>*</value>
+        </set-header>
+        <set-header name="Access-Control-Allow-Methods" exists-action="override">
+            <value>GET, POST, OPTIONS</value>
+        </set-header>
+        <trace source="api-error" severity="error">
+            <message>@{
+                var error = context.LastError;
+                var userId = context.Variables.GetValueOrDefault<string>("user-id", "unknown");
+                return $"Error: {error.Message} | User: {userId} | Source: {error.Source} | Reason: {error.Reason}";
+            }</message>
+        </trace>
+        <choose>
+            <when condition="@(context.Response.StatusCode == 401)">
+                <return-response>
+                    <set-status code="401" reason="Unauthorized" />
+                    <set-header name="Access-Control-Allow-Origin" exists-action="override">
+                        <value>*</value>
+                    </set-header>
+                    <set-header name="WWW-Authenticate" exists-action="override">
+                        <value>Bearer realm="FakeNewsAPI", error="invalid_token", error_description="The access token is missing, expired, or invalid"</value>
+                    </set-header>
+                    <set-header name="Content-Type" exists-action="override">
+                        <value>application/json</value>
+                    </set-header>
+                    <set-body>@{
+                        return new JObject(
+                            new JProperty("error", "unauthorized"),
+                            new JProperty("message", "Valid Azure AD JWT token required. Please authenticate."),
+                            new JProperty("timestamp", DateTime.UtcNow.ToString("o")),
+                            new JProperty("status", 401)
+                        ).ToString();
+                    }</set-body>
+                </return-response>
+            </when>
+            <when condition="@(context.Response.StatusCode == 429)">
+                <return-response>
+                    <set-status code="429" reason="Too Many Requests" />
+                    <set-header name="Access-Control-Allow-Origin" exists-action="override">
+                        <value>*</value>
+                    </set-header>
+                    <set-header name="Retry-After" exists-action="override">
+                        <value>86400</value>
+                    </set-header>
+                    <set-header name="Content-Type" exists-action="override">
+                        <value>application/json</value>
+                    </set-header>
+                    <set-body>@{
+                        return new JObject(
+                            new JProperty("error", "rate_limit_exceeded"),
+                            new JProperty("message", "You have exceeded the allowed request limit. Please wait or login with your organization account for unlimited access."),
+                            new JProperty("timestamp", DateTime.UtcNow.ToString("o")),
+                            new JProperty("status", 429),
+                            new JProperty("retry_after_seconds", 86400)
+                        ).ToString();
+                    }</set-body>
+                </return-response>
+            </when>
+        </choose>
+    </on-error>
+</policies>

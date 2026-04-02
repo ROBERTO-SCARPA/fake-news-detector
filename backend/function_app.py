@@ -30,6 +30,8 @@ from datetime import datetime, timezone
 
 MIN_WORDS = int(os.getenv('MIN_WORDS', '30'))
 MAX_WORDS = int(os.getenv('MAX_WORDS', '1000'))
+GUEST_MAX_ANALYSES = int(os.getenv("GUEST_MAX_ANALYSES", "3"))
+GUEST_QUOTA_TTL    = int(os.getenv("GUEST_QUOTA_TTL_SECONDS", "86400"))  # 24h default
 JOB_STATUS_TTL_SECONDS = 600  # 10 minuti
 
 # ============================================================================
@@ -49,6 +51,55 @@ vectorizer = None       # Vectorizer TF-IDF per trasformazione testo -> features
 # Client Redis (livello 1) - cache distribuita condivisa tra tutte le istanze
 # Singleton pattern: inizializzato lazy al primo utilizzo
 redis_client = None
+
+def get_caller_ip(req: func.HttpRequest) -> str:
+    """
+    Resolve the real caller IP from Azure-forwarded headers.
+    Azure APIM/App Service strips client-supplied X-Forwarded-For values,
+    so the first entry is always the actual client IP.
+    """
+    forwarded = req.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return req.headers.get("REMOTE_ADDR", "unknown")
+
+
+def check_and_increment_guest_quota(ip: str) -> tuple[bool, int, int]:
+    """
+    Atomically checks and increments the guest analysis counter for a given IP.
+
+    Returns:
+        (allowed: bool, used_after_increment: int, limit: int)
+
+    Redis key: guest:usage:{ip}
+    Uses INCR (atomic) then checks the value. If already at limit before
+    increment, rolls back with DECR and returns allowed=False.
+    """
+    cache = get_redis_client()
+    if not cache:
+        # Redis unavailable: fail open (allow the request)
+        logging.warning("Redis unavailable — guest quota check skipped, allowing request")
+        return True, 0, GUEST_MAX_ANALYSES
+
+    redis_key = f"guest:usage:{ip}"
+    try:
+        # INCR is atomic — safe under concurrent requests
+        new_count = cache.incr(redis_key)
+
+        # Set TTL only on the first increment (avoids resetting the window)
+        if new_count == 1:
+            cache.expire(redis_key, GUEST_QUOTA_TTL)
+
+        if new_count > GUEST_MAX_ANALYSES:
+            # Over limit: roll back the increment
+            cache.decr(redis_key)
+            return False, GUEST_MAX_ANALYSES, GUEST_MAX_ANALYSES
+
+        return True, new_count, GUEST_MAX_ANALYSES
+
+    except Exception as e:
+        logging.warning(f"Redis error in guest quota check: {e} — failing open")
+        return True, 0, GUEST_MAX_ANALYSES
 
 
 # ============================================================================
@@ -349,9 +400,43 @@ def cache_prediction(text_hash: str, result: dict, ttl: int = 300):
         logging.warning(f"Redis write error: {e}")
 
 
+
+
 # ============================================================================
 # HTTP ENDPOINT
 # ============================================================================
+
+
+
+@app.route(route="guest_usage", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
+def guest_usage(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Read-only: returns the guest analysis quota for the caller's IP.
+    Safe as ANONYMOUS — only reads a Redis counter, no ML processing.
+    """
+    ip = get_caller_ip(req)
+    cache = get_redis_client()
+    used = 0
+    if cache:
+        try:
+            val = cache.get(f"guest:usage:{ip}")
+            used = int(val) if val else 0
+        except Exception as e:
+            logging.warning(f"Redis read error (guest_usage): {e}")
+
+    return func.HttpResponse(
+        json.dumps({
+            "used": used,
+            "limit": GUEST_MAX_ANALYSES,
+            "remaining": max(0, GUEST_MAX_ANALYSES - used),
+            "allowed": used < GUEST_MAX_ANALYSES
+        }),
+        status_code=200,
+        mimetype="application/json",
+        headers={"Cache-Control": "no-store"}
+    )
+
+
 
 @app.route(route="classify_news", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
 def classify_news(req: func.HttpRequest) -> func.HttpResponse:
@@ -455,8 +540,33 @@ def classify_news(req: func.HttpRequest) -> func.HttpResponse:
                 status_code=400,
                 mimetype="application/json"
             )
-
         
+        # === GUEST QUOTA ENFORCEMENT ===
+        # The function key (x-functions-key) is injected by APIM and never exposed
+        auth_header = req.headers.get("Authorization", "")
+        is_guest = not auth_header.startswith("Bearer ")
+
+        if is_guest:
+            caller_ip = get_caller_ip(req)
+            allowed, used, limit = check_and_increment_guest_quota(caller_ip)
+            logging.info(f"Guest request from {caller_ip}: used={used}/{limit}, allowed={allowed}")
+
+            if not allowed:
+                return func.HttpResponse(
+                    json.dumps({
+                        "error": "guest_limit_reached",
+                        "message": (
+                            f"You have used all {limit} free analyses. "
+                            "Please log in to continue with unlimited analyses."
+                        ),
+                        "used": limit,
+                        "limit": limit,
+                        "remaining": 0
+                    }),
+                    status_code=429,
+                    mimetype="application/json"
+                )
+
         logging.info(f"→ Request received for classification ({len(text)} characters, {word_count} words)")
         
         # === CACHING PREDIZIONE (LIVELLO 1) ===
@@ -1140,6 +1250,31 @@ async def scrape_and_classify(req: func.HttpRequest) -> func.HttpResponse:
             status_code=400,
             mimetype="application/json"
         )
+    
+    # === GUEST QUOTA ENFORCEMENT ===
+    auth_header = req.headers.get("Authorization", "")
+    is_guest = not auth_header.startswith("Bearer ")
+
+    if is_guest:
+        caller_ip = get_caller_ip(req)
+        allowed, used, limit = check_and_increment_guest_quota(caller_ip)
+        logging.info(f"Guest request from {caller_ip}: used={used}/{limit}, allowed={allowed}")
+
+        if not allowed:
+            return func.HttpResponse(
+                json.dumps({
+                    "error": "guest_limit_reached",
+                    "message": (
+                        f"You have used all {limit} free analyses. "
+                        "Please log in to continue with unlimited analyses."
+                    ),
+                    "used": limit,
+                    "limit": limit,
+                    "remaining": 0
+                }),
+                status_code=429,
+                mimetype="application/json"
+            )
 
     logging.info(f"Scraping request for URL: {url}")
 
